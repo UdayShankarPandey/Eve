@@ -1,9 +1,18 @@
+pub mod detectors;
+pub mod events;
+
+use detectors::DetectorConfig;
+use events::{DesktopEvent, EventEngineStatus, NativeEventEngine};
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager,
+    AppHandle, Emitter, Manager, State,
 };
+
+/// Global state wrapper for the NativeEventEngine
+pub struct EventEngineState(pub Arc<Mutex<NativeEventEngine>>);
 
 /// Window state for desktop shell management
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,6 +142,48 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! PixelPal desktop shell is working.", name)
 }
 
+/// Starts the native event engine detector loop
+#[tauri::command]
+fn start_event_engine(
+    app: AppHandle,
+    state: State<'_, EventEngineState>,
+) -> Result<(), String> {
+    let mut engine = state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock event engine".to_string())?;
+    engine.start(app)
+}
+
+/// Stops the native event engine detector loop
+#[tauri::command]
+fn stop_event_engine(state: State<'_, EventEngineState>) -> Result<(), String> {
+    let mut engine = state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock event engine".to_string())?;
+    engine.stop()
+}
+
+/// Returns current status of the event engine
+#[tauri::command]
+fn get_event_engine_status(
+    state: State<'_, EventEngineState>,
+) -> Result<EventEngineStatus, String> {
+    let engine = state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock event engine".to_string())?;
+    Ok(engine.get_status())
+}
+
+/// Emits a test event through the Tauri IPC channel
+#[tauri::command]
+fn emit_test_event(app: AppHandle, event: DesktopEvent) -> Result<(), String> {
+    app.emit("desktop-event", &event)
+        .map_err(|e| format!("Failed to emit event: {}", e))
+}
+
 /// Setup the system tray
 fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let show_item = MenuItem::with_id(app, "show", "Show PixelPal", true, None::<&str>)?;
@@ -181,8 +232,12 @@ fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let engine = NativeEventEngine::new(DetectorConfig::default());
+    let engine_state = EventEngineState(Arc::new(Mutex::new(engine)));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .manage(engine_state)
         .setup(|app| {
             if let Err(e) = setup_tray(app.handle()) {
                 eprintln!("Failed to setup system tray: {}", e);
@@ -197,6 +252,10 @@ pub fn run() {
             hide_window,
             get_window_config,
             greet,
+            start_event_engine,
+            stop_event_engine,
+            get_event_engine_status,
+            emit_test_event,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

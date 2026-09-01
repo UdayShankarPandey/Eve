@@ -1,1 +1,2 @@
-export * from "./animation";
+export * from "./animation.ts";
+export * from "./events.ts";
