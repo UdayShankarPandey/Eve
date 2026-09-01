@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 64" width="256" height="64" shape-rendering="crispEdges">
+  <!-- Frame 0 (x: 0..64): Surprised Normal -->
+  <g transform="translate(0, 0)">
+    <ellipse cx="32" cy="58" rx="14" ry="4" fill="rgba(0,0,0,0.2)"/>
+    <rect x="22" y="24" width="20" height="26" rx="4" fill="#EC4899"/>
+    <rect x="26" y="32" width="12" height="14" rx="2" fill="#FCE7F3"/>
+    <rect x="18" y="10" width="28" height="22" rx="6" fill="#F472B6"/>
+    <rect x="18" y="8" width="8" height="6" rx="2" fill="#DB2777"/>
+    <rect x="38" y="8" width="8" height="6" rx="2" fill="#DB2777"/>
+    <rect x="24" y="18" width="4" height="6" rx="1" fill="#1E1B4B"/>
+    <rect x="36" y="18" width="4" height="6" rx="1" fill="#1E1B4B"/>
+    <rect x="25" y="19" width="2" height="2" fill="#FFFFFF"/>
+    <rect x="37" y="19" width="2" height="2" fill="#FFFFFF"/>
+    <rect x="30" y="25" width="4" height="2" rx="1" fill="#831843"/>
+    <rect x="22" y="48" width="7" height="6" rx="2" fill="#BE185D"/>
+    <rect x="35" y="48" width="7" height="6" rx="2" fill="#BE185D"/>
+  </g>
+
+  <!-- Frame 1 (x: 64..128): Startled Jolt Up (-6px) + Exclamation Point -->
+  <g transform="translate(64, -6)">
+    <ellipse cx="32" cy="64" rx="10" ry="3" fill="rgba(0,0,0,0.12)"/>
+    <rect x="22" y="24" width="20" height="24" rx="4" fill="#EC4899"/>
+    <rect x="26" y="32" width="12" height="12" rx="2" fill="#FCE7F3"/>
+    <rect x="18" y="8" width="28" height="22" rx="6" fill="#F472B6"/>
+    <rect x="17" y="3" width="8" height="8" rx="2" fill="#DB2777"/>
+    <rect x="39" y="3" width="8" height="8" rx="2" fill="#DB2777"/>
+    <ellipse cx="25" cy="18" rx="3.5" ry="4.5" fill="#1E1B4B"/>
+    <ellipse cx="37" cy="18" rx="3.5" ry="4.5" fill="#1E1B4B"/>
+    <circle cx="26" cy="17" r="1.5" fill="#FFFFFF"/>
+    <circle cx="38" cy="17" r="1.5" fill="#FFFFFF"/>
+    <ellipse cx="31" cy="24" rx="2.5" ry="3.5" fill="#831843"/>
+    <rect x="23" y="46" width="6" height="6" rx="2" fill="#BE185D"/>
+    <rect x="35" y="46" width="6" height="6" rx="2" fill="#BE185D"/>
+    <rect x="49" y="4" width="3" height="7" rx="1.5" fill="#EF4444"/>
+    <rect x="49" y="13" width="3" height="3" rx="1.5" fill="#EF4444"/>
+  </g>
+
+  <!-- Frame 2 (x: 128..192): Surprised Peak (-4px) -->
+  <g transform="translate(128, -4)">
+    <ellipse cx="32" cy="62" rx="11" ry="3.5" fill="rgba(0,0,0,0.15)"/>
+    <rect x="22" y="24" width="20" height="24" rx="4" fill="#EC4899"/>
+    <rect x="26" y="32" width="12" height="12" rx="2" fill="#FCE7F3"/>
+    <rect x="18" y="9" width="28" height="22" rx="6" fill="#F472B6"/>
+    <rect x="18" y="5" width="8" height="7" rx="2" fill="#DB2777"/>
+    <rect x="38" y="5" width="8" height="7" rx="2" fill="#DB2777"/>
+    <ellipse cx="25" cy="18" rx="3.5" ry="4.5" fill="#1E1B4B"/>
+    <ellipse cx="37" cy="18" rx="3.5" ry="4.5" fill="#1E1B4B"/>
+    <circle cx="26" cy="17" r="1.5" fill="#FFFFFF"/>
+    <circle cx="38" cy="17" r="1.5" fill="#FFFFFF"/>
+    <ellipse cx="31" cy="24" rx="2.5" ry="3.5" fill="#831843"/>
+    <rect x="22" y="47" width="7" height="6" rx="2" fill="#BE185D"/>
+    <rect x="35" y="47" width="7" height="6" rx="2" fill="#BE185D"/>
+    <line x1="12" y1="10" x2="16" y2="13" stroke="#F59E0B" stroke-width="2"/>
+    <line x1="52" y1="10" x2="48" y2="13" stroke="#F59E0B" stroke-width="2"/>
+  </g>
+
+  <!-- Frame 3 (x: 192..256): Surprised Settle (0px) -->
+  <g transform="translate(192, 0)">
+    <ellipse cx="32" cy="58" rx="14" ry="4" fill="rgba(0,0,0,0.2)"/>
+    <rect x="22" y="24" width="20" height="26" rx="4" fill="#EC4899"/>
+    <rect x="26" y="32" width="12" height="14" rx="2" fill="#FCE7F3"/>
+    <rect x="18" y="10" width="28" height="22" rx="6" fill="#F472B6"/>
+    <rect x="18" y="8" width="8" height="6" rx="2" fill="#DB2777"/>
+    <rect x="38" y="8" width="8" height="6" rx="2" fill="#DB2777"/>
+    <rect x="24" y="17" width="5" height="7" rx="1" fill="#1E1B4B"/>
+    <rect x="35" y="17" width="5" height="7" rx="1" fill="#1E1B4B"/>
+    <rect x="25" y="18" width="2" height="2" fill="#FFFFFF"/>
+    <rect x="36" y="18" width="2" height="2" fill="#FFFFFF"/>
+    <ellipse cx="31" cy="25" rx="2" ry="2" fill="#831843"/>
+    <rect x="22" y="48" width="7" height="6" rx="2" fill="#BE185D"/>
+    <rect x="35" y="48" width="7" height="6" rx="2" fill="#BE185D"/>
+  </g>
+</svg>

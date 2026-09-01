@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 64" width="256" height="64" shape-rendering="crispEdges">
+  <!-- Frame 0 (x: 0..64): Sleepy Closing Eyes -->
+  <g transform="translate(0, 0)">
+    <ellipse cx="32" cy="58" rx="14" ry="4" fill="rgba(0,0,0,0.2)"/>
+    <rect x="22" y="24" width="20" height="26" rx="4" fill="#6366F1"/>
+    <rect x="26" y="32" width="12" height="14" rx="2" fill="#C7D2FE"/>
+    <rect x="18" y="10" width="28" height="22" rx="6" fill="#818CF8"/>
+    <rect x="18" y="8" width="8" height="6" rx="2" fill="#4F46E5"/>
+    <rect x="38" y="8" width="8" height="6" rx="2" fill="#4F46E5"/>
+    <!-- Heavy Eyes -->
+    <rect x="24" y="20" width="5" height="2" rx="1" fill="#1E1B4B"/>
+    <rect x="35" y="20" width="5" height="2" rx="1" fill="#1E1B4B"/>
+    <rect x="21" y="24" width="4" height="2" rx="1" fill="#F472B6" opacity="0.6"/>
+    <rect x="39" y="24" width="4" height="2" rx="1" fill="#F472B6" opacity="0.6"/>
+    <!-- Small mouth -->
+    <ellipse cx="32" cy="25" rx="1.5" ry="1.5" fill="#312E81"/>
+    <rect x="22" y="48" width="7" height="6" rx="2" fill="#4338CA"/>
+    <rect x="35" y="48" width="7" height="6" rx="2" fill="#4338CA"/>
+  </g>
+
+  <!-- Frame 1 (x: 64..128): Sleepy Eyes Closed + Small 'z' -->
+  <g transform="translate(64, 1)">
+    <ellipse cx="32" cy="58" rx="14" ry="4" fill="rgba(0,0,0,0.2)"/>
+    <rect x="22" y="24" width="20" height="26" rx="4" fill="#6366F1"/>
+    <rect x="26" y="32" width="12" height="14" rx="2" fill="#C7D2FE"/>
+    <rect x="18" y="10" width="28" height="22" rx="6" fill="#818CF8"/>
+    <rect x="18" y="8" width="8" height="6" rx="2" fill="#4F46E5"/>
+    <rect x="38" y="8" width="8" height="6" rx="2" fill="#4F46E5"/>
+    <!-- Closed Eyes -->
+    <path d="M23 20 Q26 22 29 20" stroke="#1E1B4B" stroke-width="2" fill="none"/>
+    <path d="M35 20 Q38 22 41 20" stroke="#1E1B4B" stroke-width="2" fill="none"/>
+    <rect x="21" y="24" width="4" height="2" rx="1" fill="#F472B6" opacity="0.6"/>
+    <rect x="39" y="24" width="4" height="2" rx="1" fill="#F472B6" opacity="0.6"/>
+    <ellipse cx="32" cy="25" rx="1.5" ry="1.5" fill="#312E81"/>
+    <rect x="22" y="48" width="7" height="6" rx="2" fill="#4338CA"/>
+    <rect x="35" y="48" width="7" height="6" rx="2" fill="#4338CA"/>
+    <!-- Small z -->
+    <text x="46" y="18" font-family="monospace" font-size="10" font-weight="bold" fill="#A5B4FC">z</text>
+  </g>
+
+  <!-- Frame 2 (x: 128..192): Sleepy Breathing Deeply + Medium 'Z' -->
+  <g transform="translate(128, 2)">
+    <ellipse cx="32" cy="57" rx="14.5" ry="4" fill="rgba(0,0,0,0.2)"/>
+    <rect x="22" y="24" width="20" height="26" rx="4" fill="#6366F1"/>
+    <rect x="26" y="32" width="12" height="14" rx="2" fill="#C7D2FE"/>
+    <rect x="18" y="10" width="28" height="22" rx="6" fill="#818CF8"/>
+    <rect x="18" y="8" width="8" height="6" rx="2" fill="#4F46E5"/>
+    <rect x="38" y="8" width="8" height="6" rx="2" fill="#4F46E5"/>
+    <path d="M23 20 Q26 22 29 20" stroke="#1E1B4B" stroke-width="2" fill="none"/>
+    <path d="M35 20 Q38 22 41 20" stroke="#1E1B4B" stroke-width="2" fill="none"/>
+    <rect x="21" y="24" width="4" height="2" rx="1" fill="#F472B6" opacity="0.6"/>
+    <rect x="39" y="24" width="4" height="2" rx="1" fill="#F472B6" opacity="0.6"/>
+    <!-- Open sleeping mouth -->
+    <ellipse cx="32" cy="26" rx="2" ry="2.5" fill="#312E81"/>
+    <rect x="22" y="48" width="7" height="6" rx="2" fill="#4338CA"/>
+    <rect x="35" y="48" width="7" height="6" rx="2" fill="#4338CA"/>
+    <!-- Medium Z rising -->
+    <text x="44" y="22" font-family="monospace" font-size="8" font-weight="bold" fill="#A5B4FC">z</text>
+    <text x="48" y="12" font-family="monospace" font-size="12" font-weight="bold" fill="#818CF8">Z</text>
+  </g>
+
+  <!-- Frame 3 (x: 192..256): Sleepy Settle + Large 'Z' -->
+  <g transform="translate(192, 1)">
+    <ellipse cx="32" cy="58" rx="14" ry="4" fill="rgba(0,0,0,0.2)"/>
+    <rect x="22" y="24" width="20" height="26" rx="4" fill="#6366F1"/>
+    <rect x="26" y="32" width="12" height="14" rx="2" fill="#C7D2FE"/>
+    <rect x="18" y="10" width="28" height="22" rx="6" fill="#818CF8"/>
+    <rect x="18" y="8" width="8" height="6" rx="2" fill="#4F46E5"/>
+    <rect x="38" y="8" width="8" height="6" rx="2" fill="#4F46E5"/>
+    <path d="M23 20 Q26 22 29 20" stroke="#1E1B4B" stroke-width="2" fill="none"/>
+    <path d="M35 20 Q38 22 41 20" stroke="#1E1B4B" stroke-width="2" fill="none"/>
+    <rect x="21" y="24" width="4" height="2" rx="1" fill="#F472B6" opacity="0.6"/>
+    <rect x="39" y="24" width="4" height="2" rx="1" fill="#F472B6" opacity="0.6"/>
+    <ellipse cx="32" cy="25" rx="1.5" ry="1.5" fill="#312E81"/>
+    <rect x="22" y="48" width="7" height="6" rx="2" fill="#4338CA"/>
+    <rect x="35" y="48" width="7" height="6" rx="2" fill="#4338CA"/>
+    <text x="50" y="8" font-family="monospace" font-size="14" font-weight="bold" fill="#6366F1">Z</text>
+  </g>
+</svg>

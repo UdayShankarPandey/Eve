@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 64" width="256" height="64" shape-rendering="crispEdges">
+  <!-- Frame 0 (x: 0..64): Sad Normal Posture -->
+  <g transform="translate(0, 0)">
+    <ellipse cx="32" cy="58" rx="14" ry="4" fill="rgba(0,0,0,0.2)"/>
+    <rect x="22" y="26" width="20" height="24" rx="4" fill="#6B7280"/>
+    <rect x="26" y="34" width="12" height="12" rx="2" fill="#E5E7EB"/>
+    <rect x="18" y="12" width="28" height="22" rx="6" fill="#9CA3AF"/>
+    <rect x="18" y="10" width="8" height="6" rx="2" fill="#4B5563"/>
+    <rect x="38" y="10" width="8" height="6" rx="2" fill="#4B5563"/>
+    <path d="M23 20 Q26 23 29 20" stroke="#1F2937" stroke-width="2.5" fill="none"/>
+    <path d="M35 20 Q38 23 41 20" stroke="#1F2937" stroke-width="2.5" fill="none"/>
+    <path d="M29 28 Q32 25 35 28" stroke="#374151" stroke-width="2" fill="none"/>
+    <rect x="22" y="48" width="7" height="6" rx="2" fill="#4B5563"/>
+    <rect x="35" y="48" width="7" height="6" rx="2" fill="#4B5563"/>
+  </g>
+
+  <!-- Frame 1 (x: 64..128): Sad Droop (+2px down) -->
+  <g transform="translate(64, 2)">
+    <ellipse cx="32" cy="57" rx="15" ry="4" fill="rgba(0,0,0,0.22)"/>
+    <rect x="22" y="26" width="20" height="24" rx="4" fill="#6B7280"/>
+    <rect x="26" y="34" width="12" height="12" rx="2" fill="#E5E7EB"/>
+    <rect x="18" y="12" width="28" height="22" rx="6" fill="#9CA3AF"/>
+    <rect x="18" y="11" width="8" height="6" rx="2" fill="#4B5563"/>
+    <rect x="38" y="11" width="8" height="6" rx="2" fill="#4B5563"/>
+    <path d="M23 21 Q26 24 29 21" stroke="#1F2937" stroke-width="2.5" fill="none"/>
+    <path d="M35 21 Q38 24 41 21" stroke="#1F2937" stroke-width="2.5" fill="none"/>
+    <path d="M29 29 Q32 26 35 29" stroke="#374151" stroke-width="2" fill="none"/>
+    <rect x="22" y="48" width="7" height="6" rx="2" fill="#4B5563"/>
+    <rect x="35" y="48" width="7" height="6" rx="2" fill="#4B5563"/>
+    <ellipse cx="23" cy="25" rx="1.5" ry="2" fill="#38BDF8"/>
+  </g>
+
+  <!-- Frame 2 (x: 128..192): Sad Tear Falls (+3px down) -->
+  <g transform="translate(128, 3)">
+    <ellipse cx="32" cy="56" rx="15" ry="4" fill="rgba(0,0,0,0.22)"/>
+    <rect x="22" y="26" width="20" height="24" rx="4" fill="#6B7280"/>
+    <rect x="26" y="34" width="12" height="12" rx="2" fill="#E5E7EB"/>
+    <rect x="18" y="12" width="28" height="22" rx="6" fill="#9CA3AF"/>
+    <rect x="18" y="12" width="8" height="6" rx="2" fill="#4B5563"/>
+    <rect x="38" y="12" width="8" height="6" rx="2" fill="#4B5563"/>
+    <path d="M23 21 Q26 25 29 21" stroke="#1F2937" stroke-width="2.5" fill="none"/>
+    <path d="M35 21 Q38 25 41 21" stroke="#1F2937" stroke-width="2.5" fill="none"/>
+    <path d="M29 30 Q32 26 35 30" stroke="#374151" stroke-width="2" fill="none"/>
+    <rect x="22" y="48" width="7" height="6" rx="2" fill="#4B5563"/>
+    <rect x="35" y="48" width="7" height="6" rx="2" fill="#4B5563"/>
+    <ellipse cx="22" cy="29" rx="2" ry="3" fill="#0284C7"/>
+    <ellipse cx="42" cy="26" rx="1.5" ry="2" fill="#38BDF8"/>
+  </g>
+
+  <!-- Frame 3 (x: 192..256): Sad Sigh (+1px down) -->
+  <g transform="translate(192, 1)">
+    <ellipse cx="32" cy="57" rx="14" ry="4" fill="rgba(0,0,0,0.2)"/>
+    <rect x="22" y="26" width="20" height="24" rx="4" fill="#6B7280"/>
+    <rect x="26" y="34" width="12" height="12" rx="2" fill="#E5E7EB"/>
+    <rect x="18" y="12" width="28" height="22" rx="6" fill="#9CA3AF"/>
+    <rect x="18" y="10" width="8" height="6" rx="2" fill="#4B5563"/>
+    <rect x="38" y="10" width="8" height="6" rx="2" fill="#4B5563"/>
+    <path d="M23 20 Q26 23 29 20" stroke="#1F2937" stroke-width="2.5" fill="none"/>
+    <path d="M35 20 Q38 23 41 20" stroke="#1F2937" stroke-width="2.5" fill="none"/>
+    <path d="M29 28 Q32 25 35 28" stroke="#374151" stroke-width="2" fill="none"/>
+    <rect x="22" y="48" width="7" height="6" rx="2" fill="#4B5563"/>
+    <rect x="35" y="48" width="7" height="6" rx="2" fill="#4B5563"/>
+    <ellipse cx="21" cy="34" rx="1.5" ry="2" fill="#38BDF8" opacity="0.6"/>
+  </g>
+</svg>
