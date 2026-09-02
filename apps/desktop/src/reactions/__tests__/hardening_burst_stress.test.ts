@@ -6,74 +6,14 @@ import {
   ReactionRegistry,
   CooldownManager,
   ReactionPriority,
-  type IAnimationManager,
-  type IIdleScheduler,
 } from "../index.ts";
 import { EventBus } from "../../events/event_bus.ts";
 import { EventTypes, type DesktopEvent } from "../../events/index.ts";
 import { AnimationIds } from "../../animation/types.ts";
-
-/**
- * Mock AnimationManager capturing animation history and completions.
- */
-class HardeningAnimationManager implements IAnimationManager {
-  public currentAnim = "idle";
-  public playing = false;
-  public completeListeners: Set<(anim: any) => void> = new Set();
-  public history: string[] = [];
-
-  setAnimation(id: string, options?: { forceRestart?: boolean }): any {
-    this.currentAnim = id;
-    this.history.push(id);
-    return { definition: { id } };
-  }
-
-  getCurrentAnimation(): { id: string } {
-    return { id: this.currentAnim };
-  }
-
-  isPlaying(): boolean {
-    return this.playing;
-  }
-
-  play(animationId?: string): void {
-    if (animationId) {
-      this.setAnimation(animationId);
-    }
-    this.playing = true;
-  }
-
-  stop(): void {
-    this.playing = false;
-  }
-
-  onAnimationComplete(listener: (animation: any) => void): () => void {
-    this.completeListeners.add(listener);
-    return () => this.completeListeners.delete(listener);
-  }
-
-  triggerComplete(animId = this.currentAnim): void {
-    for (const listener of this.completeListeners) {
-      listener({ id: animId });
-    }
-  }
-}
-
-class HardeningIdleScheduler implements IIdleScheduler {
-  public running = false;
-  public startCount = 0;
-  public stopCount = 0;
-
-  start(): void {
-    this.running = true;
-    this.startCount++;
-  }
-
-  stop(): void {
-    this.running = false;
-    this.stopCount++;
-  }
-}
+import {
+  MockAnimationManager as HardeningAnimationManager,
+  MockIdleScheduler as HardeningIdleScheduler,
+} from "./test_mocks.ts";
 
 describe("Phase 3: Reaction Engine Hardening & Stress Tests", () => {
   test("1. Event Burst Stress: 500 rapid events produce zero reaction spam or memory leaks", () => {

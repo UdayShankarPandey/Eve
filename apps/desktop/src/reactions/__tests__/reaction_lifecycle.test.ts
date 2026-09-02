@@ -5,48 +5,11 @@ import {
   ReactionResolver,
   ReactionRegistry,
   CooldownManager,
-  type IAnimationManager,
-  type IIdleScheduler,
 } from "../index.ts";
 import { EventBus } from "../../events/event_bus.ts";
 import { EventTypes, type DesktopEvent } from "../../events/index.ts";
 import { AnimationIds } from "../../animation/types.ts";
-
-class MockAnimationManager implements IAnimationManager {
-  public currentAnim = "idle";
-  public playing = false;
-  public completeListeners: Set<(anim: any) => void> = new Set();
-  public shouldThrow = false;
-
-  setAnimation(id: string, options?: { forceRestart?: boolean }): any {
-    if (this.shouldThrow) {
-      throw new Error("Mock AnimationManager setAnimation failure");
-    }
-    this.currentAnim = id;
-    return { definition: { id } };
-  }
-
-  getCurrentAnimation(): { id: string } {
-    return { id: this.currentAnim };
-  }
-
-  isPlaying(): boolean {
-    return this.playing;
-  }
-
-  play(animationId?: string): void {
-    this.playing = true;
-  }
-
-  stop(): void {
-    this.playing = false;
-  }
-
-  onAnimationComplete(listener: (animation: any) => void): () => void {
-    this.completeListeners.add(listener);
-    return () => this.completeListeners.delete(listener);
-  }
-}
+import { MockAnimationManager } from "./test_mocks.ts";
 
 describe("Phase 2: Reaction Lifecycle & End-to-End Pipeline Tests", () => {
   test("1. End-to-End EventBus Pipeline: Publishing to EventBus triggers ReactionExecutor and updates animation", () => {

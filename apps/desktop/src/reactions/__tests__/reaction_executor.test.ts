@@ -5,76 +5,10 @@ import {
   ReactionResolver,
   ReactionRegistry,
   CooldownManager,
-  type IAnimationManager,
-  type IIdleScheduler,
 } from "../index.ts";
 import { EventTypes, type DesktopEvent } from "../../events/index.ts";
 import { AnimationIds } from "../../animation/types.ts";
-
-/**
- * Mock AnimationManager for deterministic testing without DOM/window requirements.
- */
-class MockAnimationManager implements IAnimationManager {
-  public currentAnim = "idle";
-  public playing = false;
-  public completeListeners: Set<(anim: any) => void> = new Set();
-  public history: string[] = [];
-
-  setAnimation(id: string, options?: { forceRestart?: boolean }): any {
-    this.currentAnim = id;
-    this.history.push(id);
-    return { definition: { id } };
-  }
-
-  getCurrentAnimation(): { id: string } {
-    return { id: this.currentAnim };
-  }
-
-  isPlaying(): boolean {
-    return this.playing;
-  }
-
-  play(animationId?: string): void {
-    if (animationId) {
-      this.setAnimation(animationId);
-    }
-    this.playing = true;
-  }
-
-  stop(): void {
-    this.playing = false;
-  }
-
-  onAnimationComplete(listener: (animation: any) => void): () => void {
-    this.completeListeners.add(listener);
-    return () => this.completeListeners.delete(listener);
-  }
-
-  triggerComplete(animId = this.currentAnim): void {
-    for (const listener of this.completeListeners) {
-      listener({ id: animId });
-    }
-  }
-}
-
-/**
- * Mock AutonomousIdleScheduler for testing suppression & resumption.
- */
-class MockIdleScheduler implements IIdleScheduler {
-  public running = false;
-  public startCalls = 0;
-  public stopCalls = 0;
-
-  start(): void {
-    this.running = true;
-    this.startCalls++;
-  }
-
-  stop(): void {
-    this.running = false;
-    this.stopCalls++;
-  }
-}
+import { MockAnimationManager, MockIdleScheduler } from "./test_mocks.ts";
 
 describe("Phase 2: Reaction Executor Tests", () => {
   test("1. Basic Execution: BATTERY_LOW event triggers WORRIED animation", () => {
