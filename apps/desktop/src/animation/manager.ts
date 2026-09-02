@@ -58,7 +58,7 @@ export class AnimationManager {
   private isPlayingActive = false;
   private cycleCount = 0;
   private timeInCurrentFrameMs = 0;
-  private timingMode: "raf" | "timer" | "manual";
+  private readonly timingMode: "raf" | "timer" | "manual";
 
   private timerId: ReturnType<typeof setTimeout> | null = null;
   private rafId: number | null = null;
@@ -75,7 +75,12 @@ export class AnimationManager {
     const initialId = options.initialAnimationId || this.registry.getDefaultId();
     const resolved = this.registry.resolve(initialId);
     this.currentAnimation = resolved.definition;
-    this.timingMode = options.timingMode || (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function" ? "raf" : "timer");
+    this.timingMode =
+      options.timingMode ??
+      (typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function"
+        ? "raf"
+        : "timer");
 
     if (options.autoStart) {
       this.play();
