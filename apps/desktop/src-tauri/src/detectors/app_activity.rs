@@ -57,17 +57,20 @@ impl ForegroundAppProvider for WindowsForegroundAppProvider {
 
         #[cfg(not(target_os = "windows"))]
         {
+            let window_title = Some("Mock Application".to_string());
+            let app_name = sanitize_app_name("Mock Application", 1234);
             Ok(Some(AppInfo {
-                app_name: "MockApp".to_string(),
+                app_name,
                 process_id: 1234,
-                window_title: Some("Mock Application".to_string()),
+                window_title,
             }))
         }
     }
 }
 
 /// Sanitizes application window titles into compact application identifiers
-fn sanitize_app_name(title: &str, process_id: u32) -> String {
+#[allow(dead_code)]
+pub fn sanitize_app_name(title: &str, process_id: u32) -> String {
     if title.is_empty() {
         return format!("Process_{}", process_id);
     }
