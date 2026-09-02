@@ -86,7 +86,10 @@ fn sanitize_app_name(title: &str, process_id: u32) -> String {
         "Discord".to_string()
     } else if lower.contains("slack") {
         "Slack".to_string()
-    } else if lower.contains("terminal") || lower.contains("powershell") || lower.contains("cmd.exe") {
+    } else if lower.contains("terminal")
+        || lower.contains("powershell")
+        || lower.contains("cmd.exe")
+    {
         "Terminal".to_string()
     } else {
         // Use first segment of title if formatted with dash (e.g. "File.txt - Notepad")
@@ -138,7 +141,8 @@ impl AppActivityDetector {
                 None => false, // initial baseline recording
             };
 
-            let debounce_satisfied = now.saturating_sub(self.last_transition_time_ms) >= self.min_debounce_ms;
+            let debounce_satisfied =
+                now.saturating_sub(self.last_transition_time_ms) >= self.min_debounce_ms;
 
             if is_different_app && debounce_satisfied {
                 let prev_name = self.last_app.as_ref().map(|a| a.app_name.clone());
@@ -177,8 +181,8 @@ impl AppActivityDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
     use std::sync::Arc;
+    use std::sync::Mutex;
 
     struct MockAppProvider {
         current_app: Arc<Mutex<Option<AppInfo>>>,

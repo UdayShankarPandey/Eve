@@ -78,14 +78,21 @@ pub fn get_default_downloads_path() -> String {
 }
 
 /// Known temporary/in-progress download extensions to ignore until completed
-const TEMP_EXTENSIONS: &[&str] = &["crdownload", "part", "tmp", "download", "opdownload", "partial"];
+const TEMP_EXTENSIONS: &[&str] = &[
+    "crdownload",
+    "part",
+    "tmp",
+    "download",
+    "opdownload",
+    "partial",
+];
 
 /// Download & Filesystem Activity Detector
 pub struct DownloadDetector {
     provider: Box<dyn DownloadsScannerProvider>,
     monitored_dir: String,
     known_candidates: HashMap<String, u64>, // path -> last seen size_bytes
-    completed_files: HashSet<String>,      // paths that have already emitted DOWNLOAD_COMPLETED
+    completed_files: HashSet<String>,       // paths that have already emitted DOWNLOAD_COMPLETED
     is_initial_scan: bool,
 }
 
@@ -124,7 +131,8 @@ impl DownloadDetector {
 
             // 1. Skip temporary / in-progress browser download extensions
             if TEMP_EXTENSIONS.contains(&file.extension.as_str()) {
-                self.known_candidates.insert(file.path.clone(), file.size_bytes);
+                self.known_candidates
+                    .insert(file.path.clone(), file.size_bytes);
                 continue;
             }
 
@@ -170,7 +178,8 @@ impl DownloadDetector {
         self.is_initial_scan = false;
 
         // Clean up candidates that were deleted / moved
-        self.known_candidates.retain(|path, _| current_paths.contains(path));
+        self.known_candidates
+            .retain(|path, _| current_paths.contains(path));
 
         Ok(events)
     }
@@ -186,8 +195,8 @@ impl DownloadDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
     use std::sync::Arc;
+    use std::sync::Mutex;
 
     struct MockScanner {
         entries: Arc<Mutex<Vec<FileMetadataEntry>>>,
@@ -206,7 +215,8 @@ mod tests {
             entries: Arc::clone(&files),
         };
 
-        let mut detector = DownloadDetector::new(Box::new(provider), "C:\\Users\\Test\\Downloads".to_string());
+        let mut detector =
+            DownloadDetector::new(Box::new(provider), "C:\\Users\\Test\\Downloads".to_string());
 
         // 1. Initial scan: directory is empty
         let events = detector.check_events().unwrap();

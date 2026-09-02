@@ -144,10 +144,7 @@ fn greet(name: &str) -> String {
 
 /// Starts the native event engine detector loop
 #[tauri::command]
-fn start_event_engine(
-    app: AppHandle,
-    state: State<'_, EventEngineState>,
-) -> Result<(), String> {
+fn start_event_engine(app: AppHandle, state: State<'_, EventEngineState>) -> Result<(), String> {
     let mut engine = state
         .0
         .lock()

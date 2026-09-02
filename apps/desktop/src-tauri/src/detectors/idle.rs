@@ -111,9 +111,7 @@ impl UserActivityDetector {
         let mut events = Vec::new();
 
         // Calculate elapsed idle time with wrapping subtraction support (Win32 tick count rolls over after ~49.7 days)
-        let elapsed_idle_ms = snapshot
-            .current_tick
-            .wrapping_sub(snapshot.last_input_tick) as u64;
+        let elapsed_idle_ms = snapshot.current_tick.wrapping_sub(snapshot.last_input_tick) as u64;
 
         let has_new_user_input = match self.last_known_input_tick {
             Some(prev_tick) => snapshot.last_input_tick != prev_tick,

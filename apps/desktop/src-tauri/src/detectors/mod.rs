@@ -87,7 +87,15 @@ impl DetectorManager {
             downloads.set_monitored_dir(dir.clone());
         }
 
-        Self::new(battery, activity, session, network, app_activity, downloads, config)
+        Self::new(
+            battery,
+            activity,
+            session,
+            network,
+            app_activity,
+            downloads,
+            config,
+        )
     }
 
     /// Polls all enabled detectors, collecting events with strict error isolation
@@ -211,7 +219,10 @@ mod tests {
     struct DummyInputProvider;
     impl LastInputProvider for DummyInputProvider {
         fn get_input_snapshot(&self) -> Result<RawInputSnapshot, String> {
-            Ok(RawInputSnapshot { last_input_tick: 1000, current_tick: 1000 })
+            Ok(RawInputSnapshot {
+                last_input_tick: 1000,
+                current_tick: 1000,
+            })
         }
     }
 
