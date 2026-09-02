@@ -60,7 +60,7 @@ export class AutonomousIdleScheduler {
   private isDisposed = false;
   private currentActiveAction: IdleAction | null = null;
 
-  private actionListeners: Set<IdleActionListener> = new Set();
+  private readonly actionListeners: Set<IdleActionListener> = new Set();
   private unsubscribeManager: (() => void) | null = null;
 
   constructor(manager: AnimationManager, options: IdleSchedulerOptions = {}) {
@@ -275,11 +275,9 @@ export class AutonomousIdleScheduler {
     if (!this.manager.isIdle() || this.manager.isOneShotActive()) {
       // Character is in a high-level emotion or one-shot reaction: pause autonomous triggers
       this.pause();
-    } else {
+    } else if (this.isRunning && this.isPaused) {
       // Character returned to background idle: resume autonomous scheduling
-      if (this.isRunning && this.isPaused) {
-        this.resume();
-      }
+      this.resume();
     }
   }
 

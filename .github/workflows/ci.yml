@@ -14,25 +14,27 @@ jobs:
     name: Frontend Typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '18'
       - name: Install dependencies
         working-directory: ./apps/desktop
-        run: npm ci || npm install
+        run: npm ci --ignore-scripts
       - name: Typecheck
         working-directory: ./apps/desktop
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
   backend-checks:
     name: Rust Lint & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@e67eb40b92a549040375cf39fb4a5be6bd27f544 # master
         with:
           components: clippy, rustfmt
       - name: Install system dependencies (Tauri)

@@ -28,7 +28,7 @@ export const EventTypes = {
   DOWNLOAD_COMPLETED: "DOWNLOAD_COMPLETED",
 } as const;
 
-export type EventType = (typeof EventTypes)[keyof typeof EventTypes] | string;
+export type EventType = (typeof EventTypes)[keyof typeof EventTypes];
 
 /**
  * Event source categories.
@@ -78,7 +78,7 @@ export interface UserActivityEventPayload {
 
 export interface SessionEventPayload {
   session_id?: number;
-  lock_state?: "locked" | "unlocked" | string;
+  lock_state?: "locked" | "unlocked";
 }
 
 export interface NetworkEventPayload {

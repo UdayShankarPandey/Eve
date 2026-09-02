@@ -139,13 +139,78 @@ export interface RegistryValidationResult {
   errors: string[];
 }
 
+function validateReactionId(
+  reaction: ReactionDefinition,
+  seenIds: Set<string>,
+  errors: string[]
+): void {
+  if (!reaction.id || reaction.id.trim() === "") {
+    errors.push("Reaction missing required 'id'");
+    return;
+  }
+  if (seenIds.has(reaction.id)) {
+    errors.push(`Duplicate reaction ID found: '${reaction.id}'`);
+  }
+  seenIds.add(reaction.id);
+}
+
+function validateReactionAnimation(
+  reaction: ReactionDefinition,
+  validAnimations: readonly string[],
+  errors: string[]
+): void {
+  if (!reaction.animationId || reaction.animationId.trim() === "") {
+    errors.push(`Reaction[${reaction.id}] missing required 'animationId'`);
+  } else if (!validAnimations.includes(reaction.animationId)) {
+    errors.push(
+      `Reaction[${reaction.id}] references invalid animationId '${reaction.animationId}'`
+    );
+  }
+}
+
+function validateReactionNumbers(
+  reaction: ReactionDefinition,
+  errors: string[]
+): void {
+  if (typeof reaction.priority !== "number" || reaction.priority < 0) {
+    errors.push(`Reaction[${reaction.id}] 'priority' must be a non-negative number`);
+  }
+
+  if (typeof reaction.cooldownMs !== "number" || reaction.cooldownMs < 0) {
+    errors.push(`Reaction[${reaction.id}] 'cooldownMs' must be a non-negative number`);
+  }
+
+  if (
+    reaction.durationMs !== undefined &&
+    (typeof reaction.durationMs !== "number" || reaction.durationMs <= 0)
+  ) {
+    errors.push(`Reaction[${reaction.id}] 'durationMs' must be a positive number if specified`);
+  }
+}
+
+function validateSingleReaction(
+  reaction: ReactionDefinition,
+  seenIds: Set<string>,
+  validAnimations: readonly string[],
+  errors: string[]
+): void {
+  validateReactionId(reaction, seenIds, errors);
+
+  if (!reaction.eventType || reaction.eventType.trim() === "") {
+    errors.push(`Reaction[${reaction.id}] missing required 'eventType'`);
+  }
+
+  validateReactionAnimation(reaction, validAnimations, errors);
+  validateReactionNumbers(reaction, errors);
+}
+
 /**
  * Centralized registry of event-to-reaction rules.
  */
 export class ReactionRegistry {
-  private reactionsList: ReactionDefinition[] = [];
-  private reactionsById: Map<string, ReactionDefinition> = new Map();
-  private reactionsByEvent: Map<EventType, ReactionDefinition> = new Map();
+  private readonly reactionsList: ReactionDefinition[] = [];
+  private readonly reactionsById: Map<string, ReactionDefinition> = new Map();
+  private readonly reactionsByEvent: Map<EventType, ReactionDefinition> = new Map();
 
   constructor(initialReactions: readonly ReactionDefinition[] = DEFAULT_REACTIONS) {
     this.registerAll(initialReactions);
@@ -199,39 +264,7 @@ export class ReactionRegistry {
     const validAnimations = Object.values(AnimationIds) as string[];
 
     for (const reaction of reactions) {
-      if (!reaction.id || reaction.id.trim() === "") {
-        errors.push("Reaction missing required 'id'");
-      } else if (seenIds.has(reaction.id)) {
-        errors.push(`Duplicate reaction ID found: '${reaction.id}'`);
-      }
-      seenIds.add(reaction.id);
-
-      if (!reaction.eventType || reaction.eventType.trim() === "") {
-        errors.push(`Reaction[${reaction.id}] missing required 'eventType'`);
-      }
-
-      if (!reaction.animationId || reaction.animationId.trim() === "") {
-        errors.push(`Reaction[${reaction.id}] missing required 'animationId'`);
-      } else if (!validAnimations.includes(reaction.animationId)) {
-        errors.push(
-          `Reaction[${reaction.id}] references invalid animationId '${reaction.animationId}'`
-        );
-      }
-
-      if (typeof reaction.priority !== "number" || reaction.priority < 0) {
-        errors.push(`Reaction[${reaction.id}] 'priority' must be a non-negative number`);
-      }
-
-      if (typeof reaction.cooldownMs !== "number" || reaction.cooldownMs < 0) {
-        errors.push(`Reaction[${reaction.id}] 'cooldownMs' must be a non-negative number`);
-      }
-
-      if (
-        reaction.durationMs !== undefined &&
-        (typeof reaction.durationMs !== "number" || reaction.durationMs <= 0)
-      ) {
-        errors.push(`Reaction[${reaction.id}] 'durationMs' must be a positive number if specified`);
-      }
+      validateSingleReaction(reaction, seenIds, validAnimations, errors);
     }
 
     return {
@@ -251,7 +284,7 @@ export class ReactionRegistry {
    * Clears all custom reactions and restores default MVP mappings.
    */
   public reset(): void {
-    this.reactionsList = [];
+    this.reactionsList.length = 0;
     this.reactionsById.clear();
     this.reactionsByEvent.clear();
     this.registerAll(DEFAULT_REACTIONS);

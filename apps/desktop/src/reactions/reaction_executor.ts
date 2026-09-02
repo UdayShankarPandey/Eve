@@ -67,7 +67,7 @@ export class ReactionExecutor {
     this.animationManager = options.animationManager;
     this.idleScheduler = options.idleScheduler;
     this.eventBus = options.eventBus;
-    this.timeProvider = options.timeProvider || (() => Date.now());
+    this.timeProvider = options.timeProvider ?? (() => Date.now());
 
     if (options.autoStart) {
       this.start();
@@ -86,17 +86,15 @@ export class ReactionExecutor {
     this.isRunning = true;
 
     // Listen to AnimationManager completion events
-    if (!this.unsubscribeAnimationComplete) {
-      this.unsubscribeAnimationComplete = this.animationManager.onAnimationComplete(
-        (completedAnim) => {
-          this.handleAnimationComplete(completedAnim);
-        }
-      );
-    }
+    this.unsubscribeAnimationComplete ??= this.animationManager.onAnimationComplete(
+      (completedAnim) => {
+        this.handleAnimationComplete(completedAnim);
+      }
+    );
 
     // Subscribe to EventBus if provided
-    if (this.eventBus && !this.unsubscribeEventBus) {
-      this.unsubscribeEventBus = this.eventBus.subscribe("*", (event) => {
+    if (this.eventBus) {
+      this.unsubscribeEventBus ??= this.eventBus.subscribe("*", (event) => {
         this.handleEvent(event as DesktopEvent);
       });
     }

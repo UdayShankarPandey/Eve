@@ -19,10 +19,8 @@ export class EventBus {
   private readonly listeners: Map<string, InternalSubscription[]> = new Map();
   private nextSubscriptionId = 1;
   private isDisposed = false;
-  private eventHistory: DesktopEvent<any>[] = [];
-  private maxHistorySize = 50;
-
-  constructor() {}
+  private readonly eventHistory: DesktopEvent<any>[] = [];
+  private readonly maxHistorySize = 50;
 
   /**
    * Subscribes a listener to a specific event type or all events ('*').
@@ -111,7 +109,7 @@ export class EventBus {
   /**
    * Dispatches an event to a list of subscriptions safely, isolating errors.
    */
-  private dispatchToList(list: InternalSubscription[], event: DesktopEvent<any>, eventKey: string): void {
+  private dispatchToList(list: InternalSubscription[], event: DesktopEvent<any>, eventKey: EventType | "*"): void {
     const toRemove: number[] = [];
     const copy = [...list]; // avoid mutation during iteration
 
@@ -158,7 +156,7 @@ export class EventBus {
    * Clears event history.
    */
   public clearHistory(): void {
-    this.eventHistory = [];
+    this.eventHistory.length = 0;
   }
 
   /**
@@ -187,7 +185,7 @@ export class EventBus {
   public destroy(): void {
     this.isDisposed = true;
     this.listeners.clear();
-    this.eventHistory = [];
+    this.eventHistory.length = 0;
   }
 }
 

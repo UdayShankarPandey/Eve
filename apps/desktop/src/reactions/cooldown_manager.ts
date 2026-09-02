@@ -4,8 +4,8 @@ import type { TimeProvider } from "./types.ts";
  * Manages per-reaction cooldowns deterministically.
  */
 export class CooldownManager {
-  private cooldowns: Map<string, number> = new Map();
-  private timeProvider: TimeProvider;
+  private readonly cooldowns: Map<string, number> = new Map();
+  private readonly timeProvider: TimeProvider;
 
   constructor(timeProvider?: TimeProvider) {
     this.timeProvider = timeProvider || (() => Date.now());

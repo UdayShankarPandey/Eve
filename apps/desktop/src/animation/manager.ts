@@ -65,10 +65,10 @@ export class AnimationManager {
   private lastTickTimeMs: number | null = null;
   private isDisposed = false;
 
-  private frameChangeListeners: Set<FrameChangeListener> = new Set();
-  private animationChangeListeners: Set<AnimationChangeListener> = new Set();
-  private animationCompleteListeners: Set<AnimationCompleteListener> = new Set();
-  private stateChangeListeners: Set<StateChangeListener> = new Set();
+  private readonly frameChangeListeners: Set<FrameChangeListener> = new Set();
+  private readonly animationChangeListeners: Set<AnimationChangeListener> = new Set();
+  private readonly animationCompleteListeners: Set<AnimationCompleteListener> = new Set();
+  private readonly stateChangeListeners: Set<StateChangeListener> = new Set();
 
   constructor(options: AnimationManagerOptions = {}) {
     this.registry = options.registry || globalAnimationRegistry;
@@ -190,18 +190,14 @@ export class AnimationManager {
     let nextFrame = this.frameIndex + count;
     let completedOneShot = false;
 
-    if (isOneShot) {
-      if (nextFrame >= totalFrames) {
-        completedOneShot = true;
-        nextFrame = totalFrames - 1; // hold on last frame at completion
-      }
-    } else {
+    if (isOneShot && nextFrame >= totalFrames) {
+      completedOneShot = true;
+      nextFrame = totalFrames - 1; // hold on last frame at completion
+    } else if (!isOneShot && nextFrame >= totalFrames) {
       // Loop mode (or ping-pong)
-      if (nextFrame >= totalFrames) {
-        const completedCycles = Math.floor(nextFrame / totalFrames);
-        this.cycleCount += completedCycles;
-        nextFrame = nextFrame % totalFrames;
-      }
+      const completedCycles = Math.floor(nextFrame / totalFrames);
+      this.cycleCount += completedCycles;
+      nextFrame = nextFrame % totalFrames;
     }
 
     const frameChanged = this.frameIndex !== nextFrame;

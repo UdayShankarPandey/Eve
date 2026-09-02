@@ -1,6 +1,7 @@
 import type { DesktopEvent } from "../../../../packages/shared-types/src/events.ts";
 import type {
   ActiveReactionState,
+  ReactionDefinition,
   ResolutionResult,
   TimeProvider,
 } from "./types.ts";
@@ -13,9 +14,9 @@ import { CooldownManager } from "./cooldown_manager.ts";
  * based on registered rules, cooldowns, and active priority state.
  */
 export class ReactionResolver {
-  private registry: ReactionRegistry;
-  private cooldownManager: CooldownManager;
-  private timeProvider: TimeProvider;
+  private readonly registry: ReactionRegistry;
+  private readonly cooldownManager: CooldownManager;
+  private readonly timeProvider: TimeProvider;
 
   constructor(options?: {
     registry?: ReactionRegistry;
@@ -40,6 +41,57 @@ export class ReactionResolver {
    */
   public getRegistry(): ReactionRegistry {
     return this.registry;
+  }
+
+  private resolveOneShotConflict(
+    reaction: ReactionDefinition,
+    activeReaction: ActiveReactionState
+  ): ResolutionResult {
+    if (reaction.priority > activeReaction.reaction.priority) {
+      return {
+        status: "RESOLVED",
+        reaction,
+        reason: `High-priority reaction '${reaction.id}' (${reaction.priority}) interrupts active reaction '${activeReaction.reaction.id}' (${activeReaction.reaction.priority})`,
+        activeReaction,
+      };
+    }
+
+    return {
+      status: "SUPPRESSED_BY_PRIORITY",
+      reaction,
+      reason: `Reaction '${reaction.id}' (priority ${reaction.priority}) is suppressed by active reaction '${activeReaction.reaction.id}' (priority ${activeReaction.reaction.priority})`,
+      activeReaction,
+    };
+  }
+
+  private resolveLoopConflict(
+    reaction: ReactionDefinition,
+    activeReaction: ActiveReactionState
+  ): ResolutionResult {
+    if (reaction.id === activeReaction.reaction.id) {
+      return {
+        status: "SUPPRESSED_BY_PRIORITY",
+        reaction,
+        reason: `Already executing loop reaction '${reaction.id}'`,
+        activeReaction,
+      };
+    }
+
+    if (reaction.priority >= activeReaction.reaction.priority) {
+      return {
+        status: "RESOLVED",
+        reaction,
+        reason: `Reaction '${reaction.id}' (${reaction.priority}) transitions from active loop '${activeReaction.reaction.id}' (${activeReaction.reaction.priority})`,
+        activeReaction,
+      };
+    }
+
+    return {
+      status: "SUPPRESSED_BY_PRIORITY",
+      reaction,
+      reason: `Reaction '${reaction.id}' (priority ${reaction.priority}) is suppressed by active loop '${activeReaction.reaction.id}' (priority ${activeReaction.reaction.priority})`,
+      activeReaction,
+    };
   }
 
   /**
@@ -78,55 +130,10 @@ export class ReactionResolver {
 
     // 3. Check active reaction priority and interruption
     if (activeReaction && now < activeReaction.expiresAt) {
-      const isActiveOneShot = activeReaction.reaction.isOneShot;
-
-      if (isActiveOneShot) {
-        // While an active one-shot reaction is executing:
-        if (reaction.priority > activeReaction.reaction.priority) {
-          // Candidate has strictly higher priority -> interrupts active reaction
-          return {
-            status: "RESOLVED",
-            reaction,
-            reason: `High-priority reaction '${reaction.id}' (${reaction.priority}) interrupts active reaction '${activeReaction.reaction.id}' (${activeReaction.reaction.priority})`,
-            activeReaction,
-          };
-        }
-
-        // Candidate has equal or lower priority -> suppressed to avoid emotion flickering
-        return {
-          status: "SUPPRESSED_BY_PRIORITY",
-          reaction,
-          reason: `Reaction '${reaction.id}' (priority ${reaction.priority}) is suppressed by active reaction '${activeReaction.reaction.id}' (priority ${activeReaction.reaction.priority})`,
-          activeReaction,
-        };
-      } else {
-        // While an active loop state is executing (e.g. USER_IDLE, PC_LOCKED, BATTERY_CRITICAL):
-        if (reaction.id === activeReaction.reaction.id) {
-          return {
-            status: "SUPPRESSED_BY_PRIORITY",
-            reaction,
-            reason: `Already executing loop reaction '${reaction.id}'`,
-            activeReaction,
-          };
-        }
-
-        if (reaction.priority >= activeReaction.reaction.priority) {
-          // State transition event (e.g. USER_ACTIVE exiting USER_IDLE, or higher priority)
-          return {
-            status: "RESOLVED",
-            reaction,
-            reason: `Reaction '${reaction.id}' (${reaction.priority}) transitions from active loop '${activeReaction.reaction.id}' (${activeReaction.reaction.priority})`,
-            activeReaction,
-          };
-        }
-
-        return {
-          status: "SUPPRESSED_BY_PRIORITY",
-          reaction,
-          reason: `Reaction '${reaction.id}' (priority ${reaction.priority}) is suppressed by active loop '${activeReaction.reaction.id}' (priority ${activeReaction.reaction.priority})`,
-          activeReaction,
-        };
+      if (activeReaction.reaction.isOneShot) {
+        return this.resolveOneShotConflict(reaction, activeReaction);
       }
+      return this.resolveLoopConflict(reaction, activeReaction);
     }
 
     // 4. No active reaction or active reaction has expired -> accepted
