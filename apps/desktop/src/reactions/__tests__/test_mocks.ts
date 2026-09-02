@@ -1,4 +1,12 @@
-import type { IAnimationManager, IIdleScheduler } from "../index.ts";
+import {
+  ReactionExecutor,
+  ReactionResolver,
+  ReactionRegistry,
+  CooldownManager,
+  type IAnimationManager,
+  type IIdleScheduler,
+} from "../index.ts";
+import { type DesktopEvent, type EventType } from "../../events/index.ts";
 
 /**
  * Shared mock AnimationManager for deterministic testing without DOM/window requirements.
@@ -38,7 +46,7 @@ export class MockAnimationManager implements IAnimationManager {
     this.playing = false;
   }
 
-  onAnimationComplete(listener: (anim: any) => void): () => void {
+  onAnimationComplete(listener: (animation: any) => void): () => void {
     this.completeListeners.add(listener);
     return () => this.completeListeners.delete(listener);
   }
@@ -75,4 +83,63 @@ export class MockIdleScheduler implements IIdleScheduler {
     this.running = false;
     this.stopCalls++;
   }
+}
+
+export interface TestHarness {
+  mockTime: number;
+  timeProvider: () => number;
+  registry: ReactionRegistry;
+  cooldownManager: CooldownManager;
+  resolver: ReactionResolver;
+  animMgr: MockAnimationManager;
+  idleScheduler: MockIdleScheduler;
+  executor: ReactionExecutor;
+  handle: (type: EventType, overrides?: Partial<DesktopEvent>) => ReturnType<ReactionExecutor["handleEvent"]>;
+}
+
+/**
+ * Creates a configured execution harness to prevent boilerplate duplication across test suites.
+ */
+export function createTestHarness(initialTime = 1000, options?: { autoStart?: boolean }): TestHarness {
+  let currentTime = initialTime;
+  const timeProvider = () => currentTime;
+  const registry = new ReactionRegistry();
+  const cooldownManager = new CooldownManager(timeProvider);
+  const resolver = new ReactionResolver({ registry, cooldownManager, timeProvider });
+  const animMgr = new MockAnimationManager();
+  const idleScheduler = new MockIdleScheduler();
+  const executor = new ReactionExecutor({
+    resolver,
+    animationManager: animMgr,
+    idleScheduler,
+    timeProvider,
+    autoStart: options?.autoStart ?? true,
+  });
+
+  return {
+    get mockTime() {
+      return currentTime;
+    },
+    set mockTime(val: number) {
+      currentTime = val;
+    },
+    timeProvider,
+    registry,
+    cooldownManager,
+    resolver,
+    animMgr,
+    idleScheduler,
+    executor,
+    handle(type: EventType, overrides?: Partial<DesktopEvent>) {
+      const event: DesktopEvent = {
+        id: overrides?.id ?? `evt_${Math.random().toString(36).slice(2, 7)}`,
+        type,
+        timestamp: overrides?.timestamp ?? currentTime,
+        source: overrides?.source ?? "system",
+        payload: overrides?.payload ?? {},
+        ...overrides,
+      };
+      return executor.handleEvent(event);
+    },
+  };
 }
