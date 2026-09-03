@@ -26,8 +26,14 @@ impl EventType {
     pub const APP_OPENED: &'static str = "APP_OPENED";
     pub const APP_CLOSED: &'static str = "APP_CLOSED";
 
-    // Filesystem
+    // Filesystem & Downloads (Sprint 3 & Sprint 5)
     pub const DOWNLOAD_COMPLETED: &'static str = "DOWNLOAD_COMPLETED";
+    pub const FILE_CREATED: &'static str = "FILE_CREATED";
+    pub const FILE_MODIFIED: &'static str = "FILE_MODIFIED";
+    pub const FILE_DELETED: &'static str = "FILE_DELETED";
+
+    // Session Awareness (Sprint 5)
+    pub const SCREEN_TIME_HIGH: &'static str = "SCREEN_TIME_HIGH";
 }
 
 /// Standardized DesktopEvent contract
@@ -35,7 +41,7 @@ impl EventType {
 pub struct DesktopEvent {
     /// Unique event identifier
     pub id: String,
-    /// Canonical event type (e.g. "BATTERY_LOW", "USER_IDLE", "NETWORK_CONNECTED")
+    /// Canonical event type (e.g. "BATTERY_LOW", "USER_IDLE", "NETWORK_CONNECTED", "FILE_CREATED")
     #[serde(rename = "type")]
     pub event_type: String,
     /// Epoch timestamp in milliseconds

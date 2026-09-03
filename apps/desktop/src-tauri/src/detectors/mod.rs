@@ -1,15 +1,19 @@
 pub mod app_activity;
 pub mod battery;
 pub mod downloads;
+pub mod filesystem;
 pub mod idle;
 pub mod network;
+pub mod screen_time;
 pub mod session;
 
 pub use app_activity::{AppActivityDetector, AppInfo, ForegroundAppProvider};
 pub use battery::{BatteryDetector, PowerStatusProvider, RawPowerStatus};
-pub use downloads::{DownloadDetector, DownloadsScannerProvider, FileMetadataEntry};
+pub use downloads::{DownloadDetector, DownloadsScannerProvider, FileMetadataEntry as DownloadMetadataEntry};
+pub use filesystem::{FilesystemDetector, FilesystemScannerProvider, FileMetadataEntry};
 pub use idle::{LastInputProvider, RawInputSnapshot, UserActivityDetector, UserActivityState};
 pub use network::{NetworkDetector, NetworkStatusProvider};
+pub use screen_time::{ScreenTimeDetector, ScreenTimeStatusProvider};
 pub use session::{SessionDetector, SessionLockState, SessionStatusProvider};
 
 use crate::events::types::DesktopEvent;
@@ -23,8 +27,12 @@ pub struct DetectorConfig {
     pub network_enabled: bool,
     pub app_activity_enabled: bool,
     pub downloads_enabled: bool,
+    pub filesystem_enabled: bool,
+    pub screen_time_enabled: bool,
     pub idle_threshold_ms: u64,
+    pub screen_time_threshold_ms: u64,
     pub downloads_dir: Option<String>,
+    pub monitored_directories: Vec<String>,
 }
 
 impl Default for DetectorConfig {
@@ -36,8 +44,12 @@ impl Default for DetectorConfig {
             network_enabled: true,
             app_activity_enabled: true,
             downloads_enabled: true,
+            filesystem_enabled: true,
+            screen_time_enabled: true,
             idle_threshold_ms: 120_000, // 2 minutes default
+            screen_time_threshold_ms: 3_600_000, // 60 minutes default
             downloads_dir: None,
+            monitored_directories: Vec::new(),
         }
     }
 }
@@ -50,10 +62,13 @@ pub struct DetectorManager {
     pub network: NetworkDetector,
     pub app_activity: AppActivityDetector,
     pub downloads: DownloadDetector,
+    pub filesystem: FilesystemDetector,
+    pub screen_time: ScreenTimeDetector,
     pub config: DetectorConfig,
 }
 
 impl DetectorManager {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         battery: BatteryDetector,
         activity: UserActivityDetector,
@@ -61,6 +76,8 @@ impl DetectorManager {
         network: NetworkDetector,
         app_activity: AppActivityDetector,
         downloads: DownloadDetector,
+        filesystem: FilesystemDetector,
+        screen_time: ScreenTimeDetector,
         config: DetectorConfig,
     ) -> Self {
         Self {
@@ -70,6 +87,8 @@ impl DetectorManager {
             network,
             app_activity,
             downloads,
+            filesystem,
+            screen_time,
             config,
         }
     }
@@ -82,6 +101,8 @@ impl DetectorManager {
         let network = NetworkDetector::native();
         let app_activity = AppActivityDetector::native();
         let mut downloads = DownloadDetector::native();
+        let filesystem = FilesystemDetector::native(config.monitored_directories.clone());
+        let screen_time = ScreenTimeDetector::native(config.screen_time_threshold_ms);
 
         if let Some(ref dir) = config.downloads_dir {
             downloads.set_monitored_dir(dir.clone());
@@ -94,6 +115,8 @@ impl DetectorManager {
             network,
             app_activity,
             downloads,
+            filesystem,
+            screen_time,
             config,
         )
     }
@@ -162,12 +185,36 @@ impl DetectorManager {
             }
         }
 
+        // 7. Filesystem Lifecycle Detector (Sprint 5)
+        if self.config.filesystem_enabled {
+            match self.filesystem.check_events() {
+                Ok(mut fs_events) => events.append(&mut fs_events),
+                Err(err) => {
+                    eprintln!("[DetectorManager] Filesystem detector warning: {}", err);
+                }
+            }
+        }
+
+        // 8. Screen Time Awareness Detector (Sprint 5)
+        if self.config.screen_time_enabled {
+            let is_idle = self.activity.get_state() == UserActivityState::Idle;
+            let is_locked = self.session.get_state() == Some(SessionLockState::Locked);
+            match self.screen_time.check_events_with_state(is_idle, is_locked) {
+                Ok(mut st_events) => events.append(&mut st_events),
+                Err(err) => {
+                    eprintln!("[DetectorManager] Screen time detector warning: {}", err);
+                }
+            }
+        }
+
         events
     }
 
     /// Updates detector configuration
     pub fn update_config(&mut self, config: DetectorConfig) {
         self.activity.set_threshold_ms(config.idle_threshold_ms);
+        self.screen_time.set_threshold_ms(config.screen_time_threshold_ms);
+        self.filesystem.set_monitored_dirs(config.monitored_directories.clone());
         if let Some(ref dir) = config.downloads_dir {
             self.downloads.set_monitored_dir(dir.clone());
         }
@@ -182,6 +229,8 @@ impl DetectorManager {
         self.network.reset();
         self.app_activity.reset();
         self.downloads.reset();
+        self.filesystem.reset();
+        self.screen_time.reset();
     }
 }
 
@@ -189,7 +238,7 @@ impl DetectorManager {
 mod tests {
     use super::*;
     use crate::events::types::EventType;
-    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
     use std::sync::Arc;
 
     struct TestPowerProvider(Arc<AtomicU8>);
@@ -242,8 +291,24 @@ mod tests {
 
     struct DummyDownloadScanner;
     impl DownloadsScannerProvider for DummyDownloadScanner {
-        fn scan_downloads_dir(&self, _dir: &str) -> Result<Vec<FileMetadataEntry>, String> {
+        fn scan_downloads_dir(&self, _dir: &str) -> Result<Vec<DownloadMetadataEntry>, String> {
             Ok(Vec::new())
+        }
+    }
+
+    struct DummyFilesystemScanner;
+    impl FilesystemScannerProvider for DummyFilesystemScanner {
+        fn scan_directory(&self, _dir: &str) -> Result<Vec<FileMetadataEntry>, String> {
+            Ok(Vec::new())
+        }
+    }
+
+    struct TestScreenProvider {
+        pub current_time: Arc<AtomicU64>,
+    }
+    impl ScreenTimeStatusProvider for TestScreenProvider {
+        fn get_status(&self) -> Result<(bool, bool, u64), String> {
+            Ok((false, false, self.current_time.load(Ordering::SeqCst)))
         }
     }
 
@@ -256,11 +321,13 @@ mod tests {
         let net = NetworkDetector::new(Box::new(TestNetProvider(Arc::new(AtomicBool::new(true)))));
         let app = AppActivityDetector::new(Box::new(DummyAppProvider), 0);
         let dl = DownloadDetector::new(Box::new(DummyDownloadScanner), "C:\\Downloads".to_string());
+        let fs = FilesystemDetector::new(Box::new(DummyFilesystemScanner), Vec::new());
+        let st = ScreenTimeDetector::new(Box::new(TestScreenProvider { current_time: Arc::new(AtomicU64::new(1000)) }), 60_000);
 
         let mut config = DetectorConfig::default();
         config.battery_enabled = false; // Disable battery detector
 
-        let mut manager = DetectorManager::new(bat, act, sess, net, app, dl, config);
+        let mut manager = DetectorManager::new(bat, act, sess, net, app, dl, fs, st, config);
 
         // Initial check: baseline established
         let _ = manager.check_all();
@@ -291,9 +358,11 @@ mod tests {
         let net = NetworkDetector::new(Box::new(TestNetProvider(Arc::clone(&net_state))));
         let app = AppActivityDetector::new(Box::new(DummyAppProvider), 0);
         let dl = DownloadDetector::new(Box::new(DummyDownloadScanner), "C:\\Downloads".to_string());
+        let fs = FilesystemDetector::new(Box::new(DummyFilesystemScanner), Vec::new());
+        let st = ScreenTimeDetector::new(Box::new(TestScreenProvider { current_time: Arc::new(AtomicU64::new(1000)) }), 60_000);
 
         let config = DetectorConfig::default();
-        let mut manager = DetectorManager::new(bat, act, sess, net, app, dl, config);
+        let mut manager = DetectorManager::new(bat, act, sess, net, app, dl, fs, st, config);
 
         // Initial check establishes baseline
         let _ = manager.check_all();

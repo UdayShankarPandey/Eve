@@ -9,6 +9,8 @@ export {
   type NetworkEventPayload,
   type AppEventPayload,
   type DownloadEventPayload,
+  type FileEventPayload,
+  type ScreenTimeEventPayload,
 } from "../../../../packages/shared-types/src/events.ts";
 
 /**

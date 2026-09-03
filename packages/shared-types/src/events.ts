@@ -24,8 +24,14 @@ export const EventTypes = {
   APP_OPENED: "APP_OPENED",
   APP_CLOSED: "APP_CLOSED",
 
-  // Filesystem
+  // Filesystem & Downloads (Sprint 3 & Sprint 5)
   DOWNLOAD_COMPLETED: "DOWNLOAD_COMPLETED",
+  FILE_CREATED: "FILE_CREATED",
+  FILE_MODIFIED: "FILE_MODIFIED",
+  FILE_DELETED: "FILE_DELETED",
+
+  // Session Awareness (Sprint 5)
+  SCREEN_TIME_HIGH: "SCREEN_TIME_HIGH",
 } as const;
 
 export type EventType = (typeof EventTypes)[keyof typeof EventTypes];
@@ -63,7 +69,7 @@ export interface DesktopEvent<T = Record<string, unknown>> {
 }
 
 /**
- * Payload schemas for Phase 1 & Phase 2 events.
+ * Payload schemas for Phase 1, Phase 2, and Sprint 5 events.
  */
 export interface BatteryEventPayload {
   battery_percent: number;
@@ -99,4 +105,19 @@ export interface DownloadEventPayload {
   size_bytes: number;
   extension?: string;
   download_dir?: string;
+}
+
+export interface FileEventPayload {
+  filename: string;
+  path: string;
+  size_bytes: number;
+  extension?: string;
+  directory: string;
+  change_type: "created" | "modified" | "deleted";
+}
+
+export interface ScreenTimeEventPayload {
+  active_duration_ms: number;
+  threshold_ms: number;
+  session_start_timestamp: number;
 }
