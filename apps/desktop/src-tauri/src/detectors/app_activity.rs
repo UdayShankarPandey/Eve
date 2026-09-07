@@ -270,7 +270,8 @@ impl AppActivityDetector {
                             }
                         } else {
                             // Switched from Unselected App -> Allowed App B
-                            let prev_name = self.last_detected_app.as_ref().map(|a| a.app_name.clone());
+                            let prev_name =
+                                self.last_detected_app.as_ref().map(|a| a.app_name.clone());
                             events.push(DesktopEvent::new(
                                 EventType::APP_OPENED,
                                 "application",
@@ -398,7 +399,10 @@ pub mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].event_type, EventType::APP_OPENED);
         assert_eq!(events[0].payload["app_name"], "VS Code");
-        assert_eq!(detector.get_active_selected_app().unwrap().app_name, "VS Code");
+        assert_eq!(
+            detector.get_active_selected_app().unwrap().app_name,
+            "VS Code"
+        );
 
         // 3. Repeated check in VS Code -> duplicate suppressed
         let events = detector.check_events().unwrap();
@@ -412,7 +416,10 @@ pub mod tests {
         assert_eq!(events[0].payload["app_name"], "VS Code");
         assert_eq!(events[1].event_type, EventType::APP_OPENED);
         assert_eq!(events[1].payload["app_name"], "Google Chrome");
-        assert_eq!(detector.get_active_selected_app().unwrap().app_name, "Google Chrome");
+        assert_eq!(
+            detector.get_active_selected_app().unwrap().app_name,
+            "Google Chrome"
+        );
 
         // 5. Switch from Google Chrome -> Notepad (Unlisted) -> APP_CLOSED(Google Chrome)
         *current.lock().unwrap() = Some(make_app("Notepad", 50));
@@ -452,7 +459,8 @@ pub mod tests {
 
         // 500ms debounce
         let allow_list = vec!["VS Code".to_string()];
-        let mut detector = AppActivityDetector::with_allow_list(Box::new(provider), allow_list, 500);
+        let mut detector =
+            AppActivityDetector::with_allow_list(Box::new(provider), allow_list, 500);
 
         // Initial scan
         let _ = detector.check_events().unwrap();
@@ -478,8 +486,11 @@ pub mod tests {
             should_fail: Arc::clone(&should_fail),
         };
 
-        let mut detector =
-            AppActivityDetector::with_allow_list(Box::new(provider), vec!["VS Code".to_string()], 0);
+        let mut detector = AppActivityDetector::with_allow_list(
+            Box::new(provider),
+            vec!["VS Code".to_string()],
+            0,
+        );
 
         let _ = detector.check_events().unwrap();
 
@@ -505,8 +516,11 @@ pub mod tests {
         };
 
         // Initially only VS Code is allowed
-        let mut detector =
-            AppActivityDetector::with_allow_list(Box::new(provider), vec!["VS Code".to_string()], 0);
+        let mut detector = AppActivityDetector::with_allow_list(
+            Box::new(provider),
+            vec!["VS Code".to_string()],
+            0,
+        );
 
         let _ = detector.check_events().unwrap();
         assert_eq!(detector.get_active_selected_app(), None);

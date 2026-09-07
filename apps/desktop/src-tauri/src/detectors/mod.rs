@@ -9,8 +9,10 @@ pub mod session;
 
 pub use app_activity::{AppActivityDetector, AppInfo, ForegroundAppProvider};
 pub use battery::{BatteryDetector, PowerStatusProvider, RawPowerStatus};
-pub use downloads::{DownloadDetector, DownloadsScannerProvider, FileMetadataEntry as DownloadMetadataEntry};
-pub use filesystem::{FilesystemDetector, FilesystemScannerProvider, FileMetadataEntry};
+pub use downloads::{
+    DownloadDetector, DownloadsScannerProvider, FileMetadataEntry as DownloadMetadataEntry,
+};
+pub use filesystem::{FileMetadataEntry, FilesystemDetector, FilesystemScannerProvider};
 pub use idle::{LastInputProvider, RawInputSnapshot, UserActivityDetector, UserActivityState};
 pub use network::{NetworkDetector, NetworkStatusProvider};
 pub use screen_time::{ScreenTimeDetector, ScreenTimeStatusProvider};
@@ -47,7 +49,7 @@ impl Default for DetectorConfig {
             downloads_enabled: true,
             filesystem_enabled: true,
             screen_time_enabled: true,
-            idle_threshold_ms: 120_000, // 2 minutes default
+            idle_threshold_ms: 120_000,          // 2 minutes default
             screen_time_threshold_ms: 3_600_000, // 60 minutes default
             downloads_dir: None,
             monitored_directories: Vec::new(),
@@ -297,9 +299,12 @@ impl DetectorManager {
     /// Updates detector configuration
     pub fn update_config(&mut self, config: DetectorConfig) {
         self.activity.set_threshold_ms(config.idle_threshold_ms);
-        self.screen_time.set_threshold_ms(config.screen_time_threshold_ms);
-        self.filesystem.set_monitored_dirs(config.monitored_directories.clone());
-        self.app_activity.set_allow_list(config.selected_applications.clone());
+        self.screen_time
+            .set_threshold_ms(config.screen_time_threshold_ms);
+        self.filesystem
+            .set_monitored_dirs(config.monitored_directories.clone());
+        self.app_activity
+            .set_allow_list(config.selected_applications.clone());
         if let Some(ref dir) = config.downloads_dir {
             self.downloads.set_monitored_dir(dir.clone());
         }
@@ -323,7 +328,7 @@ impl DetectorManager {
 mod tests {
     use super::*;
     use crate::events::types::EventType;
-    use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
     use std::sync::{Arc, Mutex};
 
     struct TestPowerProvider(Arc<AtomicU8>);
@@ -451,7 +456,12 @@ mod tests {
         let app = AppActivityDetector::new(Box::new(DummyAppProvider), 0);
         let dl = DownloadDetector::new(Box::new(DummyDownloadScanner), "C:\\Downloads".to_string());
         let fs = FilesystemDetector::new(Box::new(DummyFilesystemScanner), Vec::new());
-        let st = ScreenTimeDetector::new(Box::new(TestScreenProvider { current_time: Arc::new(AtomicU64::new(1000)) }), 60_000);
+        let st = ScreenTimeDetector::new(
+            Box::new(TestScreenProvider {
+                current_time: Arc::new(AtomicU64::new(1000)),
+            }),
+            60_000,
+        );
 
         let mut config = DetectorConfig::default();
         config.battery_enabled = false; // Disable battery detector
@@ -488,7 +498,12 @@ mod tests {
         let app = AppActivityDetector::new(Box::new(DummyAppProvider), 0);
         let dl = DownloadDetector::new(Box::new(DummyDownloadScanner), "C:\\Downloads".to_string());
         let fs = FilesystemDetector::new(Box::new(DummyFilesystemScanner), Vec::new());
-        let st = ScreenTimeDetector::new(Box::new(TestScreenProvider { current_time: Arc::new(AtomicU64::new(1000)) }), 60_000);
+        let st = ScreenTimeDetector::new(
+            Box::new(TestScreenProvider {
+                current_time: Arc::new(AtomicU64::new(1000)),
+            }),
+            60_000,
+        );
 
         let config = DetectorConfig::default();
         let mut manager = DetectorManager::new(bat, act, sess, net, app, dl, fs, st, config);
@@ -565,7 +580,11 @@ mod tests {
 
         // Initial scan: establishes baseline for all detectors
         let events = manager.check_all();
-        assert_eq!(events.len(), 0, "Initial baseline scan should emit no events");
+        assert_eq!(
+            events.len(),
+            0,
+            "Initial baseline scan should emit no events"
+        );
 
         // 1 & 2. Selected app becomes foreground -> APP_OPENED emitted
         *current_app.lock().unwrap() = Some(AppInfo {
@@ -863,7 +882,12 @@ mod tests {
         let app = AppActivityDetector::new(Box::new(DummyAppProvider), 0);
         let dl = DownloadDetector::new(Box::new(DummyDownloadScanner), "C:\\Downloads".to_string());
         let fs = FilesystemDetector::new(Box::new(DummyFilesystemScanner), Vec::new());
-        let st = ScreenTimeDetector::new(Box::new(TestScreenProvider { current_time: Arc::new(AtomicU64::new(1000)) }), 60_000);
+        let st = ScreenTimeDetector::new(
+            Box::new(TestScreenProvider {
+                current_time: Arc::new(AtomicU64::new(1000)),
+            }),
+            60_000,
+        );
 
         let config = DetectorConfig::default();
         let mut manager = DetectorManager::new(bat, act, sess, net, app, dl, fs, st, config);
@@ -941,7 +965,12 @@ mod tests {
         let app = AppActivityDetector::new(Box::new(DummyAppProvider), 0);
         let dl = DownloadDetector::new(Box::new(DummyDownloadScanner), "C:\\Downloads".to_string());
         let fs = FilesystemDetector::new(Box::new(DummyFilesystemScanner), Vec::new());
-        let st = ScreenTimeDetector::new(Box::new(TestScreenProvider { current_time: Arc::new(AtomicU64::new(1000)) }), 60_000);
+        let st = ScreenTimeDetector::new(
+            Box::new(TestScreenProvider {
+                current_time: Arc::new(AtomicU64::new(1000)),
+            }),
+            60_000,
+        );
 
         let config = DetectorConfig::default();
         let mut manager = DetectorManager::new(bat, act, sess, net, app, dl, fs, st, config);
@@ -1005,12 +1034,34 @@ mod tests {
         let pct = Arc::new(AtomicU8::new(80));
         let bat = BatteryDetector::new(Box::new(TestPowerProvider(Arc::clone(&pct))));
         let act = UserActivityDetector::new(Box::new(DummyInputProvider), 10_000);
-        let sess = SessionDetector::new(Box::new(MockFailableSessionProvider(Arc::clone(&sess_fail))));
+        let sess = SessionDetector::new(Box::new(MockFailableSessionProvider(Arc::clone(
+            &sess_fail,
+        ))));
         let net = NetworkDetector::new(Box::new(MockFailableNetProvider(Arc::clone(&net_fail))));
-        let app = AppActivityDetector::new(Box::new(MockFailableAppProvider { fail: Arc::clone(&app_fail) }), 0);
-        let dl = DownloadDetector::new(Box::new(MockFailableDownloadScanner { fail: Arc::clone(&dl_fail) }), "C:\\Downloads".to_string());
-        let fs = FilesystemDetector::new(Box::new(MockFailableFilesystemScanner { fail: Arc::clone(&fs_fail) }), vec!["C:\\Workspace".to_string()]);
-        let st = ScreenTimeDetector::new(Box::new(TestScreenProvider { current_time: Arc::new(AtomicU64::new(1000)) }), 60_000);
+        let app = AppActivityDetector::new(
+            Box::new(MockFailableAppProvider {
+                fail: Arc::clone(&app_fail),
+            }),
+            0,
+        );
+        let dl = DownloadDetector::new(
+            Box::new(MockFailableDownloadScanner {
+                fail: Arc::clone(&dl_fail),
+            }),
+            "C:\\Downloads".to_string(),
+        );
+        let fs = FilesystemDetector::new(
+            Box::new(MockFailableFilesystemScanner {
+                fail: Arc::clone(&fs_fail),
+            }),
+            vec!["C:\\Workspace".to_string()],
+        );
+        let st = ScreenTimeDetector::new(
+            Box::new(TestScreenProvider {
+                current_time: Arc::new(AtomicU64::new(1000)),
+            }),
+            60_000,
+        );
 
         let config = DetectorConfig::default();
         let mut manager = DetectorManager::new(bat, act, sess, net, app, dl, fs, st, config);
@@ -1047,7 +1098,12 @@ mod tests {
         let app = AppActivityDetector::new(Box::new(DummyAppProvider), 0);
         let dl = DownloadDetector::new(Box::new(DummyDownloadScanner), "C:\\Downloads".to_string());
         let fs = FilesystemDetector::new(Box::new(DummyFilesystemScanner), Vec::new());
-        let st = ScreenTimeDetector::new(Box::new(TestScreenProvider { current_time: Arc::new(AtomicU64::new(1000)) }), 60_000);
+        let st = ScreenTimeDetector::new(
+            Box::new(TestScreenProvider {
+                current_time: Arc::new(AtomicU64::new(1000)),
+            }),
+            60_000,
+        );
 
         let config = DetectorConfig::default();
         let mut manager = DetectorManager::new(bat, act, sess, net, app, dl, fs, st, config);
