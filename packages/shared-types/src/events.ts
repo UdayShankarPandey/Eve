@@ -95,6 +95,7 @@ export interface NetworkEventPayload {
 
 export interface AppEventPayload {
   app_name: string;
+  app_id?: string;
   process_id?: number;
   window_title?: string;
   previous_app?: string;
@@ -120,4 +121,22 @@ export interface ScreenTimeEventPayload {
   active_duration_ms: number;
   threshold_ms: number;
   session_start_timestamp: number;
+}
+
+/**
+ * Lightweight, privacy-safe diagnostic summary for native awareness detectors.
+ */
+export interface DetectorDiagnostics {
+  check_count: number;
+  total_events_emitted: number;
+  total_errors: number;
+  last_check_timestamp: number;
+  battery_events: number;
+  user_activity_events: number;
+  session_events: number;
+  network_events: number;
+  app_activity_events: number;
+  downloads_events: number;
+  filesystem_events: number;
+  screen_time_events: number;
 }

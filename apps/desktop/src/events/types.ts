@@ -11,6 +11,7 @@ export {
   type DownloadEventPayload,
   type FileEventPayload,
   type ScreenTimeEventPayload,
+  type DetectorDiagnostics,
 } from "../../../../packages/shared-types/src/events.ts";
 
 /**

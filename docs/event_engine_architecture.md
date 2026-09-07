@@ -83,25 +83,46 @@ export interface DesktopEvent<T = Record<string, unknown>> {
 
 ### E. Application Activity Detector (`apps/desktop/src-tauri/src/detectors/app_activity.rs`)
 - **Native Mechanism:** Win32 `GetForegroundWindow`, `GetWindowTextW`, and `GetWindowThreadProcessId` (`user32.dll`).
-- **Semantics:** `APP_OPENED` denotes a **foreground window focus transition** to a different application, not a low-level process creation hook.
-- **Throttling & Debounce:** 500ms debounce threshold to prevent event floods during rapid window cycling.
-- **Privacy Guarantee:** Sanitizes window title into a clean application label (e.g. "VS Code", "Google Chrome", "Spotify"). Never inspects or transmits window contents, typed text, or internal data.
+- **Selected Application Allow-List:** Configurable allow-list (e.g. `["VS Code", "Google Chrome"]`). If empty, no application events are emitted.
+- **Semantics:**
+  - `APP_OPENED`: Denotes a **foreground window focus transition** where a selected application enters focus.
+  - `APP_CLOSED`: Denotes a **foreground window focus transition** where the currently active selected application exits focus (user switches to an unselected app, desktop, or another selected app).
+  - Unselected applications do not emit `APP_OPENED`.
+- **Throttling & Debounce:** 500ms debounce threshold prevents event floods during rapid window cycling (e.g. Alt-Tab).
+- **Deduplication:** Repeated polling ticks while remaining in the same application produce 0 duplicate events.
+- **Privacy Guarantee:** Derives clean, sanitized application identities (e.g. "VS Code", "Google Chrome", "Spotify"). Never inspects, stores, or transmits window contents, typed text, document names, or internal application data. Payload contains only `app_name`, `app_id`, `process_id`, and `previous_app`.
 
 ### F. Download / File Detector (`apps/desktop/src-tauri/src/detectors/downloads.rs`)
 - **Scope Restriction:** Strictly restricted to the user's Downloads directory (`%USERPROFILE%\Downloads`).
 - **Temporary Extension Handling:** Ignores active in-progress browser download files (`.crdownload`, `.part`, `.tmp`, `.download`, `.opdownload`).
 - **Size Stabilization Heuristic:** Emits `DOWNLOAD_COMPLETED` only when a candidate file's size is $> 0$ and unchanged across observation cycles.
 - **Deduplication:** Tracks completed file paths to guarantee exactly one event per download.
-- **Known Limitations:**
-  1. If a file is downloaded and immediately deleted before the stabilization cycle, no event is emitted.
-  2. If a non-browser file is manually copied into Downloads, it is treated as a completed download once its size stabilizes.
 - **Privacy Guarantee:** Only file metadata (name, size, extension) is read. File contents are **NEVER** opened or read.
+
+### G. Filesystem Lifecycle Detector (`apps/desktop/src-tauri/src/detectors/filesystem.rs`)
+- **Scope Restriction:** Strictly scoped to user-configured directories (`monitored_directories`). If empty, no filesystem events are emitted.
+- **Lifecycle Events:**
+  - `FILE_CREATED`: Emitted when a new non-temporary file appears within a monitored directory.
+  - `FILE_MODIFIED`: Emitted when an existing monitored file changes size across polling cycles.
+  - `FILE_DELETED`: Emitted when a previously tracked file disappears from a monitored directory.
+- **Noise Suppression & Filtering:** Automatically ignores active temporary/in-progress files (`.crdownload`, `.part`, `.tmp`, `.download`, `.swp`, or prefix `~`).
+- **Deduplication:** Stable file size produces 0 duplicate `FILE_MODIFIED` events.
+- **Privacy Guarantee:** Reads file names, sizes, and extensions only. File contents are **NEVER** accessed or inspected.
+
+### H. Screen Time Awareness Detector (`apps/desktop/src-tauri/src/detectors/screen_time.rs`)
+- **Active-Session Model:** Tracks continuous user active duration without interruptions.
+- **Cross-Detector Coupling:**
+  - `USER_IDLE`: Immediately resets active session duration to 0 and clears the high-alert latch.
+  - `PC_LOCKED`: Immediately resets active session duration to 0 and clears the high-alert latch.
+  - `USER_ACTIVE` / `PC_UNLOCKED`: Begins tracking a fresh continuous active session.
+- **Threshold Alert (`SCREEN_TIME_HIGH`):** Emitted exactly once when continuous active session duration exceeds `screen_time_threshold_ms` (default: 60 minutes).
+- **Deduplication:** Latch flag suppresses continuous or repeated `SCREEN_TIME_HIGH` emissions during the same uninterrupted session.
 
 ---
 
 ## 4. Detector Configuration Matrix
 
-The `DetectorConfig` model allows enabling/disabling individual detectors independently:
+The `DetectorConfig` model allows enabling/disabling individual detectors independently and dynamically configuring thresholds:
 
 ```rust
 pub struct DetectorConfig {
@@ -111,38 +132,38 @@ pub struct DetectorConfig {
     pub network_enabled: bool,
     pub app_activity_enabled: bool,
     pub downloads_enabled: bool,
+    pub filesystem_enabled: bool,
+    pub screen_time_enabled: bool,
     pub idle_threshold_ms: u64,
+    pub screen_time_threshold_ms: u64,
     pub downloads_dir: Option<String>,
+    pub monitored_directories: Vec<String>,
+    pub selected_applications: Vec<String>,
 }
 ```
+
+- When a detector category is disabled (`enabled == false`), its polling checks are completely bypassed and produce zero events.
+- Calling `update_config()` dynamically updates runtime thresholds, directory paths, and allow-lists without spawning redundant worker threads or leaking listeners.
+- Calling `reset_all()` cleanly resets internal baseline states across all 8 detectors.
 
 ---
 
 ## 5. Error Isolation & Concurrency
 
-- **Error Isolation:** In `DetectorManager.check_all()`, each detector is polled inside an isolated `match` block. A failure in one native API logs a warning without disrupting other detectors.
-- **Concurrency & Lifecycle:** `NativeEventEngine` uses an `Arc<AtomicBool>` stop signal and joins its background worker thread on `stop()`, preventing orphan threads or race conditions.
+- **Error Isolation:** In `DetectorManager.check_all()`, each detector is polled inside an isolated `match` block. A failure or unexpected error in any single native provider (e.g. Win32 `InternetGetConnectedState` failure) logs a diagnostic warning to stderr without disrupting or disabling other detectors.
+- **Concurrency & Lifecycle:** `NativeEventEngine` uses an `Arc<AtomicBool>` stop signal and joins its background worker thread on `stop()`, preventing orphan threads, duplicate watchers, or memory leaks.
 
 ---
 
-## 6. Sprint 4 Handoff Contract
+## 6. Reaction Engine Compatibility & Normalization
 
-In Sprint 4, the **Reaction Engine** will subscribe to `DesktopEvent` notifications from `globalEventBus` and Tauri IPC:
+All 8 awareness detectors emit the standardized `DesktopEvent` structure with normalized properties:
+- `id`: Unique timestamp-based event identifier.
+- `type`: One of the 17 canonical `EventType` strings.
+- `timestamp`: Epoch milliseconds.
+- `source`: Standardized category (`"battery"`, `"user_activity"`, `"session"`, `"network"`, `"application"`, `"filesystem"`).
+- `payload`: Strongly-typed JSON payload.
 
-```typescript
-// Incoming Event Schema for Sprint 4:
-interface DesktopEvent<T> {
-  id: string;
-  type: string;
-  timestamp: number;
-  source: string;
-  payload: T;
-  metadata?: Record<string, unknown>;
-}
-```
-
-The Sprint 4 Reaction Engine will be responsible for:
-1. **Rule Evaluation:** Evaluating whether an incoming `DesktopEvent` triggers a character reaction.
-2. **Emotion & Animation Selection:** Mapping events to character emotions and animation states (e.g. `BATTERY_LOW` $\to$ `WORRIED` / `SLEEPY`).
-3. **Priority & Cooldown Management:** Resolving conflicting simultaneous events and preventing reaction fatigue.
-4. **Dialogue Generation:** Dispatching conversational prompts or contextual speech bubbles.
+### Reaction Engine Resolution:
+- **Mapped Events (Sprint 3 & 4):** Events such as `BATTERY_CRITICAL`, `BATTERY_LOW`, `NETWORK_DISCONNECTED`, `NETWORK_CONNECTED`, `APP_OPENED`, `DOWNLOAD_COMPLETED`, `USER_IDLE`, `USER_ACTIVE`, `PC_LOCKED`, `PC_UNLOCKED`, `CHARGING_STARTED`, `CHARGING_STOPPED` resolve to their canonical animations (`SAD`, `WORRIED`, `HAPPY`, `SLEEPY`, `SURPRISED`).
+- **Unmapped Awareness Events (Sprint 5):** Events such as `FILE_CREATED`, `FILE_MODIFIED`, `FILE_DELETED`, `SCREEN_TIME_HIGH`, and `APP_CLOSED` have no registered reaction rules and cleanly evaluate to `status: "NO_REACTION"` without triggering animations, errors, or reaction executor disruptions.

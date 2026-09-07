@@ -307,4 +307,115 @@ pub mod tests {
         let events = detector.check_events().unwrap();
         assert_eq!(events.len(), 0);
     }
+
+    #[test]
+    fn test_filesystem_deduplication_and_noise_control() {
+        let entries = Arc::new(Mutex::new(vec![FileMetadataEntry {
+            path: "C:\\Projects\\stable.txt".to_string(),
+            filename: "stable.txt".to_string(),
+            size_bytes: 1024,
+            extension: "txt".to_string(),
+            directory: "C:\\Projects".to_string(),
+            is_file: true,
+        }]));
+
+        let provider = Box::new(TestFilesystemScanner {
+            entries: Arc::clone(&entries),
+        });
+
+        let mut detector = FilesystemDetector::new(provider, vec!["C:\\Projects".to_string()]);
+
+        // Baseline: 0 events
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+
+        // Multiple scans with unchanged file size -> 0 duplicate events
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+
+        // Rapid change: file created
+        entries.lock().unwrap().push(FileMetadataEntry {
+            path: "C:\\Projects\\log.txt".to_string(),
+            filename: "log.txt".to_string(),
+            size_bytes: 100,
+            extension: "txt".to_string(),
+            directory: "C:\\Projects".to_string(),
+            is_file: true,
+        });
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::FILE_CREATED);
+
+        // Immediate modification on next scan
+        entries.lock().unwrap()[1].size_bytes = 250;
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::FILE_MODIFIED);
+
+        // Subsequent check with same modified size -> duplicate suppressed (0 events)
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+
+        // Immediate deletion on next scan
+        entries.lock().unwrap().remove(1);
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::FILE_DELETED);
+
+        // Inaccessible/empty directory produces 0 events safely
+        let mut empty_detector = FilesystemDetector::new(
+            Box::new(TestFilesystemScanner {
+                entries: Arc::new(Mutex::new(Vec::new())),
+            }),
+            vec!["C:\\NonExistentPath".to_string()],
+        );
+        assert_eq!(empty_detector.check_events().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_real_windows_filesystem_scanner_lifecycle() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "pixelpal_rt_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let temp_path_str = temp_dir.to_string_lossy().to_string();
+
+        let mut detector = FilesystemDetector::native(vec![temp_path_str]);
+
+        // Baseline: empty dir -> 0 events
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+
+        // 1. Create file on real Windows filesystem
+        let file_path = temp_dir.join("live_test.txt");
+        std::fs::write(&file_path, b"initial content").unwrap();
+
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::FILE_CREATED);
+
+        // 2. Duplicate suppression with unchanged file
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+
+        // 3. Modify file on real Windows filesystem (change size)
+        std::fs::write(&file_path, b"initial content with added bytes").unwrap();
+
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::FILE_MODIFIED);
+
+        // 4. Duplicate suppression after modification
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+
+        // 5. Delete file on real Windows filesystem
+        std::fs::remove_file(&file_path).unwrap();
+
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::FILE_DELETED);
+
+        // Clean up disposable directory
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 }

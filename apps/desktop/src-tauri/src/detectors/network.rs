@@ -144,4 +144,91 @@ mod tests {
         assert_eq!(events[0].event_type, EventType::NETWORK_CONNECTED);
         assert_eq!(events[0].payload["connected"], true);
     }
+
+    #[test]
+    fn test_network_repeated_same_state_deduplication() {
+        let connected = Arc::new(AtomicBool::new(false)); // Initially offline
+        let provider = MockNetworkProvider {
+            connected: Arc::clone(&connected),
+        };
+
+        let mut detector = NetworkDetector::new(Box::new(provider));
+
+        // Initial check: baseline established (offline)
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+
+        // Multiple repeated offline checks -> exactly 0 events
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+
+        // Connect -> exactly 1 event (NETWORK_CONNECTED)
+        connected.store(true, Ordering::SeqCst);
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::NETWORK_CONNECTED);
+
+        // Multiple repeated online checks -> exactly 0 events
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+
+        // Disconnect -> exactly 1 event (NETWORK_DISCONNECTED)
+        connected.store(false, Ordering::SeqCst);
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::NETWORK_DISCONNECTED);
+    }
+
+    struct MockFailableNetworkProvider {
+        should_fail: Arc<AtomicBool>,
+        connected: Arc<AtomicBool>,
+    }
+
+    impl NetworkStatusProvider for MockFailableNetworkProvider {
+        fn is_connected(&self) -> Result<bool, String> {
+            if self.should_fail.load(Ordering::SeqCst) {
+                Err("Simulated Win32 wininet InternetGetConnectedState failure".to_string())
+            } else {
+                Ok(self.connected.load(Ordering::SeqCst))
+            }
+        }
+    }
+
+    #[test]
+    fn test_network_failure_handling_and_recovery() {
+        let should_fail = Arc::new(AtomicBool::new(false));
+        let connected = Arc::new(AtomicBool::new(true));
+        let provider = MockFailableNetworkProvider {
+            should_fail: Arc::clone(&should_fail),
+            connected: Arc::clone(&connected),
+        };
+
+        let mut detector = NetworkDetector::new(Box::new(provider));
+
+        // 1. Initial check succeeds
+        let res = detector.check_events();
+        assert!(res.is_ok());
+        assert_eq!(detector.is_currently_connected(), Some(true));
+
+        // 2. Native API fails -> returns Err without panicking
+        should_fail.store(true, Ordering::SeqCst);
+        let res = detector.check_events();
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err(),
+            "Simulated Win32 wininet InternetGetConnectedState failure"
+        );
+        // Last known state is preserved
+        assert_eq!(detector.is_currently_connected(), Some(true));
+
+        // 3. Native API recovers with network disconnected -> emits transition
+        should_fail.store(false, Ordering::SeqCst);
+        connected.store(false, Ordering::SeqCst);
+        let res = detector.check_events();
+        assert!(res.is_ok());
+        let events = res.unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::NETWORK_DISCONNECTED);
+        assert_eq!(detector.is_currently_connected(), Some(false));
+    }
 }

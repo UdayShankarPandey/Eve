@@ -105,30 +105,78 @@ pub fn sanitize_app_name(title: &str, process_id: u32) -> String {
     }
 }
 
-/// Native Application Activity Detector
+/// Native Selected Application Activity & Focus Transition Detector (Sprint 5 Phase 2)
 pub struct AppActivityDetector {
     provider: Box<dyn ForegroundAppProvider>,
-    last_app: Option<AppInfo>,
+    allow_list: Vec<String>,
+    active_selected_app: Option<AppInfo>,
+    last_detected_app: Option<AppInfo>,
     last_transition_time_ms: u64,
     min_debounce_ms: u64,
+    is_initial_scan: bool,
 }
 
 impl AppActivityDetector {
+    /// Creates a detector with default empty allow-list (or backward-compatible setup)
     pub fn new(provider: Box<dyn ForegroundAppProvider>, min_debounce_ms: u64) -> Self {
+        Self::with_allow_list(provider, Vec::new(), min_debounce_ms)
+    }
+
+    /// Creates a detector with a configurable allow-list
+    pub fn with_allow_list(
+        provider: Box<dyn ForegroundAppProvider>,
+        allow_list: Vec<String>,
+        min_debounce_ms: u64,
+    ) -> Self {
         Self {
             provider,
-            last_app: None,
+            allow_list,
+            active_selected_app: None,
+            last_detected_app: None,
             last_transition_time_ms: 0,
             min_debounce_ms,
+            is_initial_scan: true,
         }
     }
 
     /// Creates a detector using the real native Windows foreground app provider
-    pub fn native() -> Self {
-        Self::new(Box::new(WindowsForegroundAppProvider), 500) // 500ms debounce
+    pub fn native(allow_list: Vec<String>) -> Self {
+        Self::with_allow_list(Box::new(WindowsForegroundAppProvider), allow_list, 500)
     }
 
-    /// Polls foreground window and emits DesktopEvents only on meaningful application switches
+    /// Updates the selected application allow-list at runtime
+    pub fn set_allow_list(&mut self, allow_list: Vec<String>) {
+        self.allow_list = allow_list;
+        // If current active app is no longer allowed, clear active_selected_app
+        if let Some(ref current) = self.active_selected_app {
+            if self.is_app_allowed(&current.app_name).is_none() {
+                self.active_selected_app = None;
+            }
+        }
+    }
+
+    /// Returns the current allow-list
+    pub fn get_allow_list(&self) -> &[String] {
+        &self.allow_list
+    }
+
+    /// Matches an app name against the allow-list (case-insensitive substring/equality)
+    pub fn is_app_allowed(&self, app_name: &str) -> Option<String> {
+        let app_lower = app_name.to_lowercase();
+        for item in &self.allow_list {
+            let item_lower = item.trim().to_lowercase();
+            if !item_lower.is_empty()
+                && (app_lower == item_lower
+                    || app_lower.contains(&item_lower)
+                    || item_lower.contains(&app_lower))
+            {
+                return Some(item.clone());
+            }
+        }
+        None
+    }
+
+    /// Polls foreground window and emits APP_OPENED / APP_CLOSED only for selected applications
     pub fn check_events(&mut self) -> Result<Vec<DesktopEvent>, String> {
         let current = self.provider.get_foreground_app()?;
         let mut events = Vec::new();
@@ -138,114 +186,339 @@ impl AppActivityDetector {
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
-        if let Some(current_app) = current {
-            let is_different_app = match &self.last_app {
-                Some(prev) => prev.app_name != current_app.app_name,
-                None => false, // initial baseline recording
-            };
+        match current {
+            None => {
+                self.is_initial_scan = false;
+                // No foreground window (e.g. desktop/lockscreen)
+                if let Some(prev_selected) = self.active_selected_app.take() {
+                    let app_id = self.is_app_allowed(&prev_selected.app_name);
+                    events.push(DesktopEvent::new(
+                        EventType::APP_CLOSED,
+                        "application",
+                        json!({
+                            "app_name": prev_selected.app_name,
+                            "app_id": app_id,
+                            "process_id": prev_selected.process_id,
+                            "previous_app": null,
+                        }),
+                    ));
+                }
+                self.last_detected_app = None;
+            }
+            Some(current_app) => {
+                // Check if identical to last detected app -> duplicate suppression
+                let is_same_app = self
+                    .last_detected_app
+                    .as_ref()
+                    .map(|a| a.app_name == current_app.app_name)
+                    .unwrap_or(false);
 
-            let debounce_satisfied =
-                now.saturating_sub(self.last_transition_time_ms) >= self.min_debounce_ms;
+                if is_same_app {
+                    return Ok(events);
+                }
 
-            if is_different_app && debounce_satisfied {
-                let prev_name = self.last_app.as_ref().map(|a| a.app_name.clone());
+                let current_allowed_id = self.is_app_allowed(&current_app.app_name);
 
-                events.push(DesktopEvent::new(
-                    EventType::APP_OPENED,
-                    "application",
-                    json!({
-                        "app_name": current_app.app_name,
-                        "process_id": current_app.process_id,
-                        "previous_app": prev_name,
-                    }),
-                ));
+                if self.is_initial_scan {
+                    // On initial scan, establish baseline without spurious open events
+                    self.is_initial_scan = false;
+                    self.last_detected_app = Some(current_app.clone());
+                    if current_allowed_id.is_some() {
+                        self.active_selected_app = Some(current_app);
+                    }
+                    return Ok(events);
+                }
+
+                // Check debounce
+                let debounce_satisfied =
+                    now.saturating_sub(self.last_transition_time_ms) >= self.min_debounce_ms;
+
+                if !debounce_satisfied {
+                    return Ok(events);
+                }
 
                 self.last_transition_time_ms = now;
-            }
 
-            self.last_app = Some(current_app);
+                match current_allowed_id {
+                    Some(app_id) => {
+                        // Current app is in allow-list
+                        if let Some(prev_allowed) = self.active_selected_app.take() {
+                            if prev_allowed.app_name != current_app.app_name {
+                                // Switched from Allowed App A -> Allowed App B
+                                let prev_id = self.is_app_allowed(&prev_allowed.app_name);
+                                events.push(DesktopEvent::new(
+                                    EventType::APP_CLOSED,
+                                    "application",
+                                    json!({
+                                        "app_name": prev_allowed.app_name,
+                                        "app_id": prev_id,
+                                        "process_id": prev_allowed.process_id,
+                                        "previous_app": null,
+                                    }),
+                                ));
+
+                                events.push(DesktopEvent::new(
+                                    EventType::APP_OPENED,
+                                    "application",
+                                    json!({
+                                        "app_name": current_app.app_name,
+                                        "app_id": Some(app_id),
+                                        "process_id": current_app.process_id,
+                                        "previous_app": Some(prev_allowed.app_name),
+                                    }),
+                                ));
+                            }
+                        } else {
+                            // Switched from Unselected App -> Allowed App B
+                            let prev_name = self.last_detected_app.as_ref().map(|a| a.app_name.clone());
+                            events.push(DesktopEvent::new(
+                                EventType::APP_OPENED,
+                                "application",
+                                json!({
+                                    "app_name": current_app.app_name,
+                                    "app_id": Some(app_id),
+                                    "process_id": current_app.process_id,
+                                    "previous_app": prev_name,
+                                }),
+                            ));
+                        }
+                        self.active_selected_app = Some(current_app.clone());
+                    }
+                    None => {
+                        // Current app is NOT in allow-list
+                        if let Some(prev_allowed) = self.active_selected_app.take() {
+                            // Allowed App A was active, but now switched away to unlisted app
+                            let prev_id = self.is_app_allowed(&prev_allowed.app_name);
+                            events.push(DesktopEvent::new(
+                                EventType::APP_CLOSED,
+                                "application",
+                                json!({
+                                    "app_name": prev_allowed.app_name,
+                                    "app_id": prev_id,
+                                    "process_id": prev_allowed.process_id,
+                                    "previous_app": null,
+                                }),
+                            ));
+                        }
+                        // If no allowed app was active, unselected -> unselected produces zero events
+                    }
+                }
+
+                self.last_detected_app = Some(current_app);
+            }
         }
 
         Ok(events)
     }
 
+    /// Returns the currently active selected application
+    pub fn get_active_selected_app(&self) -> Option<&AppInfo> {
+        self.active_selected_app.as_ref()
+    }
+
     /// Returns the last known active application
     pub fn get_current_app(&self) -> Option<&AppInfo> {
-        self.last_app.as_ref()
+        self.last_detected_app.as_ref()
     }
 
     /// Resets internal state
     pub fn reset(&mut self) {
-        self.last_app = None;
+        self.active_selected_app = None;
+        self.last_detected_app = None;
         self.last_transition_time_ms = 0;
+        self.is_initial_scan = true;
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
-    use std::sync::Arc;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
-    struct MockAppProvider {
-        current_app: Arc<Mutex<Option<AppInfo>>>,
+    pub struct MockAppProvider {
+        pub current_app: Arc<Mutex<Option<AppInfo>>>,
+        pub should_fail: Arc<Mutex<bool>>,
     }
 
     impl ForegroundAppProvider for MockAppProvider {
         fn get_foreground_app(&self) -> Result<Option<AppInfo>, String> {
+            if *self.should_fail.lock().unwrap() {
+                return Err("Simulated foreground window query failure".to_string());
+            }
             Ok(self.current_app.lock().unwrap().clone())
         }
     }
 
-    #[test]
-    fn test_app_transitions_and_deduplication() {
-        let app_state = Arc::new(Mutex::new(Some(AppInfo {
-            app_name: "VS Code".to_string(),
-            process_id: 100,
-            window_title: Some("code.rs - VS Code".to_string()),
-        })));
+    fn make_app(name: &str, pid: u32) -> AppInfo {
+        AppInfo {
+            app_name: name.to_string(),
+            process_id: pid,
+            window_title: Some(format!("{} - Window", name)),
+        }
+    }
 
+    #[test]
+    fn test_empty_allow_list() {
+        let current = Arc::new(Mutex::new(Some(make_app("VS Code", 100))));
         let provider = MockAppProvider {
-            current_app: Arc::clone(&app_state),
+            current_app: Arc::clone(&current),
+            should_fail: Arc::new(Mutex::new(false)),
         };
 
-        let mut detector = AppActivityDetector::new(Box::new(provider), 0); // 0ms debounce for tests
+        // Empty allow-list
+        let mut detector = AppActivityDetector::with_allow_list(Box::new(provider), Vec::new(), 0);
 
-        // 1. Initial check establishes baseline -> no event
         let events = detector.check_events().unwrap();
         assert_eq!(events.len(), 0);
 
-        // 2. Same app stays in focus -> duplicate suppressed
+        *current.lock().unwrap() = Some(make_app("Google Chrome", 200));
         let events = detector.check_events().unwrap();
         assert_eq!(events.len(), 0);
+    }
 
-        // 3. Switch to Google Chrome -> APP_OPENED emitted
-        *app_state.lock().unwrap() = Some(AppInfo {
-            app_name: "Google Chrome".to_string(),
-            process_id: 200,
-            window_title: Some("GitHub - Google Chrome".to_string()),
-        });
+    #[test]
+    fn test_single_and_multiple_allowed_apps_lifecycle() {
+        let current = Arc::new(Mutex::new(Some(make_app("Notepad", 50)))); // Unlisted
+        let provider = MockAppProvider {
+            current_app: Arc::clone(&current),
+            should_fail: Arc::new(Mutex::new(false)),
+        };
 
+        let allow_list = vec!["VS Code".to_string(), "Google Chrome".to_string()];
+        let mut detector = AppActivityDetector::with_allow_list(Box::new(provider), allow_list, 0);
+
+        // 1. Initial check (Notepad) -> baseline established, 0 events
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 0);
+        assert_eq!(detector.get_active_selected_app(), None);
+
+        // 2. Switch to VS Code (Allowed App A) -> APP_OPENED
+        *current.lock().unwrap() = Some(make_app("VS Code", 100));
         let events = detector.check_events().unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].event_type, EventType::APP_OPENED);
+        assert_eq!(events[0].payload["app_name"], "VS Code");
+        assert_eq!(detector.get_active_selected_app().unwrap().app_name, "VS Code");
+
+        // 3. Repeated check in VS Code -> duplicate suppressed
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 0);
+
+        // 4. Switch from VS Code -> Google Chrome (Allowed App B) -> APP_CLOSED(VS Code) + APP_OPENED(Google Chrome)
+        *current.lock().unwrap() = Some(make_app("Google Chrome", 200));
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].event_type, EventType::APP_CLOSED);
+        assert_eq!(events[0].payload["app_name"], "VS Code");
+        assert_eq!(events[1].event_type, EventType::APP_OPENED);
+        assert_eq!(events[1].payload["app_name"], "Google Chrome");
+        assert_eq!(detector.get_active_selected_app().unwrap().app_name, "Google Chrome");
+
+        // 5. Switch from Google Chrome -> Notepad (Unlisted) -> APP_CLOSED(Google Chrome)
+        *current.lock().unwrap() = Some(make_app("Notepad", 50));
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::APP_CLOSED);
         assert_eq!(events[0].payload["app_name"], "Google Chrome");
-        assert_eq!(events[0].payload["previous_app"], "VS Code");
+        assert_eq!(detector.get_active_selected_app(), None);
 
-        // 4. Continued focus in Google Chrome -> duplicate suppressed
+        // 6. Switch from Notepad -> Calculator (both unlisted) -> 0 events
+        *current.lock().unwrap() = Some(make_app("Calculator", 60));
         let events = detector.check_events().unwrap();
         assert_eq!(events.len(), 0);
 
-        // 5. Switch to Spotify -> APP_OPENED emitted
-        *app_state.lock().unwrap() = Some(AppInfo {
-            app_name: "Spotify".to_string(),
-            process_id: 300,
-            window_title: Some("Spotify Music".to_string()),
-        });
-
+        // 7. Return back to VS Code -> APP_OPENED
+        *current.lock().unwrap() = Some(make_app("VS Code", 100));
         let events = detector.check_events().unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].event_type, EventType::APP_OPENED);
-        assert_eq!(events[0].payload["app_name"], "Spotify");
+        assert_eq!(events[0].payload["app_name"], "VS Code");
+
+        // 8. Desktop foreground (None) -> APP_CLOSED(VS Code)
+        *current.lock().unwrap() = None;
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::APP_CLOSED);
+        assert_eq!(events[0].payload["app_name"], "VS Code");
+    }
+
+    #[test]
+    fn test_debounce_and_rapid_switching() {
+        let current = Arc::new(Mutex::new(Some(make_app("Notepad", 50))));
+        let provider = MockAppProvider {
+            current_app: Arc::clone(&current),
+            should_fail: Arc::new(Mutex::new(false)),
+        };
+
+        // 500ms debounce
+        let allow_list = vec!["VS Code".to_string()];
+        let mut detector = AppActivityDetector::with_allow_list(Box::new(provider), allow_list, 500);
+
+        // Initial scan
+        let _ = detector.check_events().unwrap();
+
+        // Switch to VS Code
+        *current.lock().unwrap() = Some(make_app("VS Code", 100));
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::APP_OPENED);
+
+        // Immediate rapid switch within debounce interval (<500ms)
+        *current.lock().unwrap() = Some(make_app("Notepad", 50));
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 0); // Debounce suppressed transient switch
+    }
+
+    #[test]
+    fn test_error_handling_and_recovery() {
+        let current = Arc::new(Mutex::new(Some(make_app("VS Code", 100))));
+        let should_fail = Arc::new(Mutex::new(false));
+        let provider = MockAppProvider {
+            current_app: Arc::clone(&current),
+            should_fail: Arc::clone(&should_fail),
+        };
+
+        let mut detector =
+            AppActivityDetector::with_allow_list(Box::new(provider), vec!["VS Code".to_string()], 0);
+
+        let _ = detector.check_events().unwrap();
+
+        // Provider fails -> returns Err safely without crashing
+        *should_fail.lock().unwrap() = true;
+        let res = detector.check_events();
+        assert!(res.is_err());
+
+        // Provider recovers -> detector continues cleanly
+        *should_fail.lock().unwrap() = false;
+        *current.lock().unwrap() = Some(make_app("Notepad", 50));
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::APP_CLOSED);
+    }
+
+    #[test]
+    fn test_configuration_update_allow_list() {
+        let current = Arc::new(Mutex::new(Some(make_app("Chrome", 200))));
+        let provider = MockAppProvider {
+            current_app: Arc::clone(&current),
+            should_fail: Arc::new(Mutex::new(false)),
+        };
+
+        // Initially only VS Code is allowed
+        let mut detector =
+            AppActivityDetector::with_allow_list(Box::new(provider), vec!["VS Code".to_string()], 0);
+
+        let _ = detector.check_events().unwrap();
+        assert_eq!(detector.get_active_selected_app(), None);
+
+        // Update allow-list to include Chrome
+        detector.set_allow_list(vec!["VS Code".to_string(), "Chrome".to_string()]);
+        assert_eq!(detector.get_allow_list().len(), 2);
+
+        // Switch to Chrome -> now recognized as allowed app
+        *current.lock().unwrap() = Some(make_app("Google Chrome", 200));
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::APP_OPENED);
     }
 }

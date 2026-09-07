@@ -49,8 +49,8 @@ export const EventTypes = {
   NETWORK_DISCONNECTED: "NETWORK_DISCONNECTED", // Network state became offline
 
   // Application Activity
-  APP_OPENED: "APP_OPENED",             // Foreground application switched
-  APP_CLOSED: "APP_CLOSED",             // Application closed
+  APP_OPENED: "APP_OPENED",             // Selected application entered foreground
+  APP_CLOSED: "APP_CLOSED",             // Selected application exited foreground
 
   // Filesystem
   DOWNLOAD_COMPLETED: "DOWNLOAD_COMPLETED", // File download finished in Downloads directory

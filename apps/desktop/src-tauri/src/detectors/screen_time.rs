@@ -120,10 +120,21 @@ impl ScreenTimeDetector {
         is_idle: bool,
         is_locked: bool,
     ) -> Result<Vec<DesktopEvent>, String> {
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
+        let now_ms = if let Ok((_, _, ts)) = self.provider.get_status() {
+            if ts > 0 {
+                ts
+            } else {
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0)
+            }
+        } else {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0)
+        };
         self.process_session_state(is_idle, is_locked, now_ms)
     }
 
@@ -248,6 +259,63 @@ pub mod tests {
 
         // Advance to 105,000ms (55s active since unlock) -> triggers alert!
         current_time.store(105_000, Ordering::SeqCst);
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::SCREEN_TIME_HIGH);
+    }
+
+    #[test]
+    fn test_screen_time_threshold_boundary_precision() {
+        let is_idle = Arc::new(AtomicBool::new(false));
+        let is_locked = Arc::new(AtomicBool::new(false));
+        let current_time = Arc::new(AtomicU64::new(10_000));
+
+        let provider = Box::new(TestScreenTimeProvider {
+            is_idle: Arc::clone(&is_idle),
+            is_locked: Arc::clone(&is_locked),
+            current_time: Arc::clone(&current_time),
+        });
+
+        // 60,000ms threshold
+        let mut detector = ScreenTimeDetector::new(provider, 60_000);
+
+        // Initial check at 10,000ms: baseline established
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+
+        // Advance to threshold - 1ms (69,999ms, accumulated 59,999ms) -> exactly 0 events
+        current_time.store(69_999, Ordering::SeqCst);
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+
+        // Advance to exact threshold (70,000ms, accumulated 60,000ms) -> exactly 1 event
+        current_time.store(70_000, Ordering::SeqCst);
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::SCREEN_TIME_HIGH);
+        assert_eq!(events[0].payload["active_duration_ms"], 60_000);
+
+        // Advance to threshold + 1ms (70,001ms) -> duplicate suppressed (0 events)
+        current_time.store(70_001, Ordering::SeqCst);
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+
+        // Advance further (80,000ms) -> duplicate still suppressed
+        current_time.store(80_000, Ordering::SeqCst);
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+
+        // Reset via user idle
+        is_idle.store(true, Ordering::SeqCst);
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+
+        // Resume user activity at 100,000ms -> fresh session
+        is_idle.store(false, Ordering::SeqCst);
+        current_time.store(100_000, Ordering::SeqCst);
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+
+        // Check new session at threshold - 1ms (159,999ms, accumulated 59,999ms) -> 0 events
+        current_time.store(159_999, Ordering::SeqCst);
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+
+        // Cross threshold in new session (160,000ms, accumulated 60,000ms) -> exactly 1 event
+        current_time.store(160_000, Ordering::SeqCst);
         let events = detector.check_events().unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].event_type, EventType::SCREEN_TIME_HIGH);
