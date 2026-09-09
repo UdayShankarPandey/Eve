@@ -859,3 +859,160 @@ export interface ProfileFailureResult {
 export type ProfileOperationResult<T> =
   | ProfileSuccessResult<T>
   | ProfileFailureResult;
+
+/**
+ * ============================================================================
+ * SPRINT 7 — CHARACTER EXPRESSIONS & ASSET SYSTEM DOMAIN CONTRACTS
+ * ============================================================================
+ */
+
+/**
+ * Canonical 9-expression MVP taxonomy for companion characters (Sprint 7).
+ */
+export const CharacterExpressionIds = {
+  IDLE: "idle",
+  HAPPY: "happy",
+  SAD: "sad",
+  WORRIED: "worried",
+  SLEEPY: "sleepy",
+  SURPRISED: "surprised",
+  PANIC: "panic",
+  CELEBRATE: "celebrate",
+  THINKING: "thinking",
+} as const;
+
+export type CharacterExpressionId =
+  (typeof CharacterExpressionIds)[keyof typeof CharacterExpressionIds];
+
+/**
+ * Array of all valid canonical expression IDs for fast validation.
+ */
+export const ALL_CHARACTER_EXPRESSION_IDS: readonly CharacterExpressionId[] = [
+  "idle",
+  "happy",
+  "sad",
+  "worried",
+  "sleepy",
+  "surprised",
+  "panic",
+  "celebrate",
+  "thinking",
+] as const;
+
+/**
+ * Controlled, injection-proof request specification for generating an expression variant.
+ * Strictly anchored to an existing CharacterProfile as the identity authority.
+ */
+export interface ExpressionGenerationContract {
+  /** Target character profile ID (identity authority) */
+  readonly characterId: string;
+  /** Requested expression state */
+  readonly expression: CharacterExpressionId;
+  /** Rendering aesthetic inherited from profile */
+  readonly renderingStyle: CharacterRenderingStyle;
+  /** Anatomical proportions inherited from profile */
+  readonly proportions: ChibiProportions;
+  /** Clothing configuration inherited from profile */
+  readonly clothing: ClothingConfiguration;
+  /** Palette configuration inherited from profile */
+  readonly palette: PaletteConfiguration;
+  /** Canonical sprite frame dimensions */
+  readonly frameDimensions: { readonly width: number; readonly height: number };
+  /** Deterministic instructional prompt generated internally */
+  readonly prompt: string;
+}
+
+export interface ExpressionGenerationRequest {
+  /** Target character profile (identity authority) */
+  readonly profile: CharacterProfile;
+  /** Requested expression */
+  readonly expression: CharacterExpressionId;
+  /** Optional override for generation options */
+  readonly options?: CharacterGenerationOptions;
+}
+
+/**
+ * Metadata record for a validated expression asset.
+ */
+export interface ExpressionAssetRecord {
+  /** Stable unique asset ID (e.g. expr_asset_<characterId>_<expression>_<hash>) */
+  readonly assetId: string;
+  /** Bound CharacterProfile ID */
+  readonly characterId: string;
+  /** Bound expression */
+  readonly expression: CharacterExpressionId;
+  /** Sprite asset storage reference or path */
+  readonly assetPath: string;
+  /** Frame count in animation (default 1 for static sprite, or >1 for strip) */
+  readonly frameCount: number;
+  /** Frame dimensions in pixels */
+  readonly frameDimensions: { readonly width: number; readonly height: number };
+  /** Playback speed in frames per second */
+  readonly fps: number;
+  /** Duration in milliseconds */
+  readonly durationMs: number;
+  /** Loop mode */
+  readonly loopMode: "loop" | "one-shot" | "ping-pong";
+  /** Fallback expression ID (defaults to 'idle') */
+  readonly fallbackExpressionId?: CharacterExpressionId;
+  /** SHA-256 hash of the verified pixel asset */
+  readonly sha256: string;
+  /** Creation timestamp */
+  readonly createdAt: number;
+  /** Whether asset passed quality validation */
+  readonly qualityVerified: boolean;
+}
+
+/**
+ * Error codes for expression consistency validation.
+ */
+export type ExpressionConsistencyErrorCode =
+  | "CONSISTENCY_CHARACTER_MISMATCH"
+  | "CONSISTENCY_STYLE_MISMATCH"
+  | "CONSISTENCY_CLOTHING_MISMATCH"
+  | "CONSISTENCY_PALETTE_DRIFT"
+  | "CONSISTENCY_DIMENSION_MISMATCH"
+  | "CONSISTENCY_TRANSPARENCY_VIOLATION";
+
+export interface ExpressionConsistencyError {
+  readonly code: ExpressionConsistencyErrorCode;
+  readonly message: string;
+  readonly details?: Record<string, unknown>;
+}
+
+export interface ExpressionConsistencyReport {
+  readonly valid: boolean;
+  readonly characterId: string;
+  readonly expression: CharacterExpressionId;
+  readonly errors: readonly ExpressionConsistencyError[];
+  readonly warnings: readonly string[];
+}
+
+/**
+ * Error codes for expression asset quality validation.
+ */
+export type ExpressionQualityErrorCode =
+  | "QUALITY_INVALID_FORMAT"
+  | "QUALITY_DECODE_FAILED"
+  | "QUALITY_DIMENSION_MISMATCH"
+  | "QUALITY_ALPHA_MISSING"
+  | "QUALITY_TRANSPARENCY_EMPTY"
+  | "QUALITY_OPAQUE_BACKGROUND"
+  | "QUALITY_BLURRED_EDGES"
+  | "QUALITY_ASSET_CORRUPTED";
+
+export interface ExpressionQualityError {
+  readonly code: ExpressionQualityErrorCode;
+  readonly message: string;
+  readonly details?: Record<string, unknown>;
+}
+
+export interface ExpressionQualityReport {
+  readonly valid: boolean;
+  readonly format?: string;
+  readonly width?: number;
+  readonly height?: number;
+  readonly hasAlpha?: boolean;
+  readonly errors: readonly ExpressionQualityError[];
+  readonly warnings: readonly string[];
+}

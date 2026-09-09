@@ -23,3 +23,8 @@ export * from "./profile_validator.ts";
 export * from "./paths.ts";
 export * from "./profile_storage.ts";
 export * from "./profile_manager.ts";
+export * from "./expression_prompt_builder.ts";
+export * from "./expression_generator.ts";
+export * from "./expression_consistency.ts";
+export * from "./expression_registry.ts";
+export * from "./expression_quality.ts";

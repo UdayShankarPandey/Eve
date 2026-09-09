@@ -73,6 +73,18 @@ export {
   type ProfileSuccessResult,
   type ProfileFailureResult,
   type ProfileOperationResult,
+  CharacterExpressionIds,
+  type CharacterExpressionId,
+  ALL_CHARACTER_EXPRESSION_IDS,
+  type ExpressionGenerationContract,
+  type ExpressionGenerationRequest,
+  type ExpressionAssetRecord,
+  type ExpressionConsistencyErrorCode,
+  type ExpressionConsistencyError,
+  type ExpressionConsistencyReport,
+  type ExpressionQualityErrorCode,
+  type ExpressionQualityError,
+  type ExpressionQualityReport,
 } from "../../../../packages/shared-types/src/character.ts";
 
 

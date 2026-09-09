@@ -1,8 +1,8 @@
 # PixelPal — Controlled AI Character Generation Pipeline
 
-**Version:** 1.2.0<br/>
-**Scope:** Sprint 6 Phase 5 (Character Profile & Asset Identity Foundation)<br/>
-**Upstream Checkpoint:** `120138c` (Sprint 6 Phase 4: Deterministic Pixel-Art Processing)
+**Version:** 1.3.0<br/>
+**Scope:** Sprint 7 (Character Expressions & Asset System)<br/>
+**Upstream Checkpoint:** `61b7abd` (Sprint 6 Phase 5: Character Profile & Asset Identity Foundation)
 
 ---
 
@@ -353,3 +353,111 @@ With Phase 5 complete, the entire 5-phase character generation pipeline is funct
 3. **Phase 3 (Generate)**: Controlled prompt synthesis and `gpt-image-2.5-sunburst` reference editing.
 4. **Phase 4 (Pixel Process)**: Nearest-neighbor 64×64 downscaling, binary alpha cutoff, 16-color Median-Cut quantization.
 5. **Phase 5 (Profile)**: Canonical identity, asset binding, structured clothing/palette models, and atomic persistence.
+
+---
+
+## 10. Sprint 7: Character Expressions & Asset System
+
+Sprint 7 transitions PixelPal from a single generated base companion character into a complete multi-expression animation pack.
+
+```
++─────────────────────────────────────────────────────────────────────────────+
+|                         SPRINT 7 EXPRESSION PIPELINE                        |
++─────────────────────────────────────────────────────────────────────────────+
+
+       CharacterProfile (Identity Authority)
+                     │
+         ┌───────────┴───────────┐
+         ▼                       ▼
+Controlled Prompt         Base Character
+Builder (9 Expressions)   Sprite Reference
+         │                       │
+         └───────────┬───────────┘
+                     │
+                     ▼
+          AI Generation Provider
+     (OpenAI / MockProvider in Tests)
+                     │
+                     ▼
+             PixelArtProcessor
+      (64x64, Alpha Threshold, Quantize)
+                     │
+         ┌───────────┴───────────┐
+         ▼                       ▼
+Consistency Validator    Quality Validator
+ (Identity, Attire,     (PNG, Transparency,
+  Palette, Dimensions)   No Halos, Crisp Edges)
+         │                       │
+         └───────────┬───────────┘
+                     │
+                     ▼
+        CharacterExpressionRegistry
+     (Sprint 2 AnimationManifest Integration
+       + Deterministic Fallback Strategy)
+```
+
+### 10.1. Nine-Expression MVP Taxonomy
+Sprint 7 defines a canonical, closed-union 9-expression taxonomy (`CharacterExpressionId`):
+1. **`idle`**: Resting neutral demeanor, calm breathing posture, soft smiling eyes (ambient state).
+2. **`happy`**: Joyful, radiant smile, smiling curved eyes, energetic cheerful stance.
+3. **`sad`**: Visibly sorrowful downcast eyes, drooping mouth, subtle slumped posture.
+4. **`worried`**: Anxious furrowed brow, concerned wide eyes, nervous glance, slight hesitation.
+5. **`sleepy`**: Closed or half-lidded resting eyes, peaceful drowsy expression, cozy posture.
+6. **`surprised`**: Wide astonished circular eyes, open-mouthed startled expression, alert posture.
+7. **`panic`**: High-distress alarm, wide fearful eyes, distressed hand reaction, startled pose.
+8. **`celebrate`**: Triumphant cheering expression, beaming smile, hands raised, celebratory hop.
+9. **`thinking`**: Contemplative thoughtful gaze, hand to chin or cheek, curious pensive expression.
+
+### 10.2. Character Consistency Contract
+To prevent nine loosely related AI characters from being generated, `CharacterProfile` serves as the strict identity authority:
+- **Hairstyle & Facial Identity**: Injected directives mandate identical hairstyle, hair color, skin tone, eye color, and face shape from the reference base.
+- **Clothing Binding**: Exact clothing top, bottom, footwear, accessories, and color theme from `profile.clothing` are enforced.
+- **Palette Budget**: Extracted palette colors and `profile.palette.maxOpaqueColors` are enforced during quantization and verified via `validateExpressionConsistency()`.
+- **Dimension Uniformity**: Canonical 64×64 frame dimensions are verified at both record and raster levels.
+- **Asset Identity**: Stable naming format `expr_asset_<characterId>_<expression>_<hash>` links character and expression with SHA-256 integrity verification.
+
+### 10.3. Controlled Expression Prompt Generation
+Prompts are synthesized entirely internally from strongly typed domain contracts via `buildExpressionPrompt()`. Arbitrary user-supplied prompt text, filesystem paths, storage IDs, EXIF, and device metadata are strictly excluded, eliminating prompt injection risks.
+
+### 10.4. Animation Manifest & Asset Registry Integration
+`CharacterExpressionRegistry` integrates directly with Sprint 2 animation contracts:
+- Reuses `AnimationDefinition`, `AnimationManifest`, `FrameDimensions`, `LoopMode`, `ValidationResult`, and `ResolvedAnimation`.
+- Maps each expression to playback metadata: FPS, frame count, duration in milliseconds, and loop mode (`loop` vs `one-shot`).
+- Supports JSON serialization and round-trip reloading via `toJSON()` and `fromJSON()`.
+
+### 10.5. Deterministic Fallback Strategy
+When a consumer requests an expression asset:
+```
+Requested Expression
+        │
+        ▼
+Registered in Manifest?
+ ├── YES ──► Valid Asset?
+ │            ├── YES ──► Return Asset (resolvedFromFallback: false)
+ │            └── NO  ──► Custom Fallback (if defined) or Default Fallback ('idle')
+ └── NO  ──► Custom Fallback (if defined) or Default Fallback ('idle')
+```
+- Missing optional expressions fall back safely to `idle` without throwing unhandled exceptions into the renderer.
+- Fallbacks are explicitly tracked via `resolvedFromFallback: true` and descriptive `fallbackReason`.
+
+### 10.6. Asset Quality Validation Pipeline
+`validateExpressionAssetQuality()` enforces automated quality gates:
+1. **Format**: Valid PNG magic bytes (`0x89504E470D0A1A0A`) and clean raster decode.
+2. **Dimensions**: Exact match against expected canvas size (64×64).
+3. **Alpha Channel**: Required 4-channel RGBA with active transparency.
+4. **Silhouette Isolation**: Inspects all four canvas corners; rejects assets where corners are fully opaque (indicating unremoved backgrounds).
+5. **Content Verification**: Rejects 100% transparent empty canvases.
+6. **Pixel Crispness**: Rejects semi-transparent anti-aliased edge halos (`maxSemiTransparentPixels: 0`) to guarantee authentic pixel-art rendering.
+
+### 10.7. Manual Aseprite Refinement Workflow
+While the pipeline is fully automated and headless, pixel artists can manually touch up expression assets:
+1. **Export**: Export validated expression PNG (`expr_asset_*.png`).
+2. **Aseprite Touch-Up**: Open in Aseprite to manually refine pixel clusters, adjust dithering, clean silhouette outlines, or align frame sequences.
+3. **Save**: Save as standard 32-bit RGBA PNG with transparency preserved.
+4. **Re-Validation**: Pass the edited sprite back through `validateExpressionConsistency()` and `validateExpressionAssetQuality()`.
+5. **Zero Runtime Dependency**: Aseprite is treated strictly as an external authoring tool. The desktop runtime has zero dependency on Aseprite being installed.
+
+### 10.8. Storage Architecture
+- **Durable Identity**: `CharacterProfile` JSON documents reside in `<appDataDir>/profiles/`.
+- **Companion Asset Packs**: Final validated expression assets are indexed by stable asset ID and referenced via application sprite paths (`/assets/sprites/<characterId>/<expression>.png`).
+- **Temporary Cache**: Raw upload, preprocessed, generated, and scratch files remain in temporary storage (`os.tmpdir()`).

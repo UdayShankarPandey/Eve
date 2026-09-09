@@ -382,6 +382,127 @@ export class PixelArtProcessor {
   }
 
   /**
+   * Directly processes an in-memory image buffer into a crisp, transparent pixel sprite.
+   */
+  public async processBuffer(
+    inputBuffer: Buffer,
+    options?: Partial<PixelProcessOptions>
+  ): Promise<{
+    buffer: Buffer;
+    metadata: SpriteImageMetadata;
+    palette: ReturnType<typeof quantizeRgbaBuffer>["palette"];
+  }> {
+    let metadata: Metadata;
+    try {
+      metadata = await sharp(inputBuffer).metadata();
+    } catch (metaErr) {
+      throw new PixelProcessingError(
+        "PIXEL_DECODE_FAILED",
+        `Failed to decode raster metadata: ${metaErr instanceof Error ? metaErr.message : String(metaErr)}`
+      );
+    }
+
+    if (!metadata.width || !metadata.height) {
+      throw new PixelProcessingError(
+        "PIXEL_DECODE_FAILED",
+        "Source image has missing or invalid dimensions."
+      );
+    }
+
+    const totalPixels = metadata.width * metadata.height;
+    if (totalPixels > MAX_INPUT_PIXELS) {
+      throw new PixelProcessingError(
+        "PIXEL_RESOURCE_LIMIT",
+        `Source image exceeds maximum permitted pixel count (${totalPixels} > ${MAX_INPUT_PIXELS}).`
+      );
+    }
+
+    const targetDimension = (options?.targetDimension ??
+      this.defaultOptions.targetDimension) as SpriteDimension;
+
+    if (targetDimension !== 64 && targetDimension !== 128) {
+      throw new PixelProcessingError(
+        "PIXEL_RESIZE_FAILED",
+        `Unsupported target sprite dimension: ${targetDimension}. Must be 64 or 128.`
+      );
+    }
+
+    const maxOpaqueColors =
+      options?.maxOpaqueColors ?? this.defaultOptions.maxOpaqueColors;
+    const alphaThreshold =
+      options?.alphaThreshold ?? this.defaultOptions.alphaThreshold;
+    const dithering = options?.dithering ?? this.defaultOptions.dithering;
+
+    let resizedRawBuffer: Buffer;
+    try {
+      const resizeResult = await sharp(inputBuffer)
+        .ensureAlpha()
+        .resize(targetDimension, targetDimension, {
+          kernel: sharp.kernel.nearest,
+          fit: "contain",
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        })
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+
+      resizedRawBuffer = resizeResult.data;
+    } catch (resizeErr) {
+      throw new PixelProcessingError(
+        "PIXEL_RESIZE_FAILED",
+        `Nearest-neighbor downscaling failed: ${resizeErr instanceof Error ? resizeErr.message : String(resizeErr)}`
+      );
+    }
+
+    const quantResult = quantizeRgbaBuffer(
+      resizedRawBuffer,
+      targetDimension,
+      targetDimension,
+      {
+        maxOpaqueColors,
+        alphaThreshold,
+        dithering,
+      }
+    );
+
+    let spritePngBuffer: Buffer;
+    try {
+      spritePngBuffer = await sharp(quantResult.buffer, {
+        raw: {
+          width: targetDimension,
+          height: targetDimension,
+          channels: 4,
+        },
+      })
+        .png({ compressionLevel: 9 })
+        .toBuffer();
+    } catch (encodeErr) {
+      throw new PixelProcessingError(
+        "PIXEL_OUTPUT_FAILED",
+        `Failed to encode output sprite PNG: ${encodeErr instanceof Error ? encodeErr.message : String(encodeErr)}`
+      );
+    }
+
+    const sha256 = await computeSha256Hex(new Uint8Array(spritePngBuffer));
+
+    const spriteMetadata: SpriteImageMetadata = {
+      format: "png",
+      mimeType: "image/png",
+      width: targetDimension,
+      height: targetDimension,
+      sizeBytes: spritePngBuffer.length,
+      hasAlpha: true,
+      opaqueColorCount: quantResult.opaqueColorCount,
+      sha256,
+    };
+
+    return {
+      buffer: spritePngBuffer,
+      metadata: spriteMetadata,
+      palette: quantResult.palette,
+    };
+  }
+
+  /**
    * Cleans up a specific sprite asset by storage ID.
    */
   public async cleanup(spriteStorageId: string): Promise<boolean> {
