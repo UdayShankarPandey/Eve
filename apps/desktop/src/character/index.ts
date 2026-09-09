@@ -16,3 +16,6 @@ export * from "./openai_provider.ts";
 export * from "./mock_provider.ts";
 export * from "./generated_storage.ts";
 export * from "./generator.ts";
+export * from "./sprite_storage.ts";
+export * from "./color_quantizer.ts";
+export * from "./pixel_processor.ts";

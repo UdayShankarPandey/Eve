@@ -1,23 +1,23 @@
 # PixelPal — Controlled AI Character Generation Pipeline
 
-**Version:** 1.0.0  
-**Scope:** Sprint 6 Phase 3 (Controlled AI Character Generation Foundation)  
-**Upstream Checkpoint:** `00e6d24` (Sprint 6 Phase 2: Character Image Preprocessing Foundation)
+**Version:** 1.1.0<br/>
+**Scope:** Sprint 6 Phase 4 (Deterministic Pixel-Art Processing & Sprite Foundation)<br/>
+**Upstream Checkpoint:** `d5e8703` (Sprint 6 Phase 3: Controlled AI Character Generation)
 
 ---
 
 ## 1. Executive Summary & Objective
 
-PixelPal allows users to create personalized pixel-art companions from their own photographs. In Sprint 6 Phase 1, an impermeable upload boundary was established to validate raw bytes, magic signatures, headers, and dimensions. In Sprint 6 Phase 2, a deterministic preprocessing engine was introduced to decode rasters safely, normalize EXIF orientation, crop to a 1:1 framing, normalize dimensions to 512×512, strip camera/GPS metadata, and provide safe intermediate temporary storage.
+PixelPal allows users to create personalized pixel-art companions from their own photographs. In Sprint 6 Phase 1, an impermeable upload boundary was established to validate raw bytes, magic signatures, headers, and dimensions. In Sprint 6 Phase 2, a deterministic preprocessing engine was introduced to decode rasters safely, normalize EXIF orientation, crop to a 1:1 framing, normalize dimensions to 512×512, strip camera/GPS metadata, and provide safe intermediate temporary storage. In Sprint 6 Phase 3, a controlled AI character generation engine was established behind a vendor-neutral provider abstraction using `gpt-image-2.5-sunburst` to create 1024×1024 character base images.
 
-Sprint 6 Phase 3 builds strictly on top of Phase 2 by introducing the **Controlled AI Character Generation Foundation**. Phase 3 performs:
-1. **Vendor-Neutral Provider Abstraction**: Decouples character generation behind `CharacterGenerationProvider`, enabling test doubles, local on-device generation, and multi-provider extensibility.
-2. **Official OpenAI Provider Implementation**: Connects to the modern OpenAI image generation & editing API surface (`images.edit` / `images.generate`) using `gpt-image-2.5-flare` (with `gpt-image-2.5-sunburst` and `dall-e-3` supported).
-3. **Controlled, Injection-Proof Prompt Builder**: Synthesizes structured instructional prompts exclusively from strongly typed style enums, eliminating user prompt injection, path leakage, and metadata disclosure.
-4. **Strict Server-Side Credential Handling**: Reads `OPENAI_API_KEY` strictly from the server/Node execution environment. Never exposes keys to browser webviews, client bundles, or logged diagnostics.
-5. **Controlled Network Boundary & Privacy**: Transmits exclusively the sanitized Phase 2 preprocessed image and controlled prompt. Never transmits raw user photos, filenames, GPS, or unrelated desktop context.
-6. **Rigorous Output Validation**: Validates AI outputs before storage—decoding rasters, enforcing sane dimensions (64×64 to 2048×2048), rejecting corrupted/unsupported formats, and stripping all provider metadata.
-7. **Application-Owned Generated Asset Storage**: Staged in `pixelpal_generated/` with collision-resistant unique identifiers (`generated_char_<timestamp>_<randomHex>.png`), POSIX `0o600` permissions, traversal defense, and automatic cleanup.
+Sprint 6 Phase 4 builds strictly on top of Phase 3 by introducing the **Deterministic Pixel-Art Processing & Sprite Foundation**. Phase 4 performs:
+1. **Validated Source Reference Ingestion**: Ingests Phase 3 generated images strictly by `generatedStorageId`, rejecting arbitrary filesystem paths and traversal attempts.
+2. **Nearest-Neighbor Aspect-Preserving Downscaling**: Resamples images to the canonical 64×64 sprite canvas (or optional 128×128) using nearest-neighbor semantics (`sharp.kernel.nearest`), preventing interpolation blur.
+3. **Alpha Segregation & Binary Thresholding**: Decouples alpha from opaque color quantization, enforcing a clean binary alpha threshold (`alphaThreshold: 128`) that preserves transparent backgrounds without black/white matting or translucent halos.
+4. **Deterministic Median-Cut Quantization**: Clusters opaque pixels into a bounded palette (default 16 colors, configurable 2–256) with deterministic channel tie-breaking. Dithering is disabled by default for maximum crispness.
+5. **Privacy & Metadata Stripping**: Strips all EXIF, GPS, IPTC, and XMP metadata during encoding, producing a clean RGBA PNG sprite.
+6. **Application-Owned Sprite Storage**: Stages sprite assets in `pixelpal_sprites/` with collision-resistant unique identifiers (`sprite_char_<timestamp>_<randomHex>.png`), POSIX `0o600` permissions, traversal defense, and automatic cleanup.
+7. **Strict Determinism**: Guarantees identical pixel buffers and SHA-256 checksums for identical input bytes and options across runs.
 
 ---
 
@@ -42,7 +42,7 @@ Safe Raster Decode + EXIF Orientation + Center Crop + BG Removal + 512x512 Lancz
       ▼
 Sanitized Intermediate PNG (`processed_char_<id>.png` in `pixelpal_processed/`)
 
-Phase 3 (This Phase — Headless AI Generation Capability):
+Phase 3 (Completed):
 Sanitized Intermediate PNG Reference
       │
       ▼
@@ -52,7 +52,7 @@ Controlled Prompt Builder (Typed Style -> Template -> Injection-Free Prompt)
 Provider Abstraction (OpenAIImageGenerationProvider)
       │  [External Network Boundary: Transmits sanitized PNG + controlled prompt ONLY]
       ▼
-AI Image Generation API (gpt-image-2.5-flare / b64_json / URL)
+AI Image Generation API (gpt-image-2.5-sunburst / b64_json)
       │
       ▼
 Output Image Validation (Raster Decode, Dimension Verification, Strip Metadata)
@@ -60,15 +60,36 @@ Output Image Validation (Raster Decode, Dimension Verification, Strip Metadata)
       ▼
 Generated Intermediate PNG (`generated_char_<id>.png` in `pixelpal_generated/`)
 
-Phase 4 (Future Scope):
-Generated Intermediate PNG ──► Pixel Art Conversion & Palette Reduction (Final Sprite Sheet)
+Phase 4 (This Phase — Deterministic Pixel-Art Processing):
+Generated Intermediate PNG Reference
+      │
+      ▼
+Source Validation & Traversal Defense (`generated_char_<id>.png` in `pixelpal_generated/`)
+      │
+      ▼
+Sharp Nearest-Neighbor Aspect Resampling (64×64 default, 128×128 optional) + Transparent Contain Padding
+      │
+      ▼
+Raw RGBA Extraction & Segregated Alpha Thresholding (alphaThreshold: 128)
+      │
+      ▼
+Deterministic Median-Cut Color Quantization (16 Opaque Colors, Zero Halos, Dither: OFF)
+      │
+      ▼
+Metadata-Free PNG Encoding & SHA-256 Digest
+      │
+      ▼
+Sprite-Ready PNG (`sprite_char_<id>.png` in `pixelpal_sprites/`)
+
+Phase 5 (Future Scope):
+Sprite-Ready PNG ──► CharacterProfile & SQLite Persistence
 ```
 
 > [!IMPORTANT]
 > **Production Runtime Separation**:
-> - **Headless Capability**: Phase 3 is implemented as a headless Node-side domain capability and test suite.
+> - **Headless Capability**: Phase 4 is implemented as a headless Node-side domain capability and test suite.
 > - **Deferred Integration**: There is currently NO production desktop UI, NO Tauri IPC command, and NO background Node daemon/sidecar. Frontend UI integration and production IPC wiring are intentionally deferred to subsequent integration sprints.
-> - **Browser Bundle Isolation**: The OpenAI SDK is installed strictly as a host Node dependency in `apps/desktop/package.json` and is never imported by protected frontend files (`App.tsx`, `App.css`, `index.css`, `main.tsx`, `components/*`). Client bundling (`tsc && vite build`) remains completely free of AI SDK code or secrets.
+> - **Browser Bundle Isolation**: Sharp and Node filesystem utilities remain strictly host Node modules and are never imported by protected frontend files (`App.tsx`, `App.css`, `index.css`, `main.tsx`, `components/*`). Client bundling (`tsc && vite build`) remains completely free of native image processing code.
 
 ---
 
@@ -186,3 +207,66 @@ npx tsx src/character/__tests__/manual_live_smoke.ts
 - Never logs or prints the key.
 - Generates a synthetic test character, validates output, and cleans up temporary assets immediately.
 - Safely skips when `OPENAI_API_KEY` is not set.
+
+---
+
+## 8. Deterministic Pixel-Art Processing & Sprite Foundation (Phase 4)
+
+### 8.1. Architectural Scope & Invariant
+Phase 4 ingests validated Phase 3 generated images (`generated_char_<timestamp>_<hex>`) and produces clean, transparent, sprite-ready pixel art (`sprite_char_<timestamp>_<hex>.png`).
+- **No AI Invocations**: Phase 4 is a 100% deterministic, offline mathematical processing stage.
+- **Source Preservation**: Phase 3 generated source files are strictly read-only and never modified or overwritten.
+- **Zero Hallucinated Edge Halos**: Segregated alpha pipeline guarantees that transparency is never quantized into opaque colors.
+
+### 8.2. Canonical Sprite Dimension Policy
+- **Canonical Default**: `64×64` square canvas. Matches the canonical frame dimensions established by the PixelPal desktop animation engine.
+- **Optional High-Resolution**: `128×128` square canvas. Supported as a validated configuration option for detailed companion profiles.
+- **Aspect Ratio & Centering**: Input images that deviate from square proportions are fitted using Sharp's `fit: 'contain'` policy with transparent padding (`{ r: 0, g: 0, b: 0, alpha: 0 }`), ensuring zero subject stretching or cropping. Arbitrary non-canonical dimensions (e.g. 96×96) are rejected.
+
+### 8.3. Alpha-Aware Segregation & Binary Cutoff
+- **Alpha Isolation**: Alpha is excluded entirely from the color quantization budget. The transparent background is never assigned to a palette index.
+- **Binary Alpha Thresholding**: Semi-transparent edge pixels produced by AI anti-aliasing are evaluated against `alphaThreshold` (default `128`):
+  - `alpha >= 128` -> Converted to fully opaque (`alpha = 255`).
+  - `alpha < 128` -> Converted to fully transparent (`rgba = (0, 0, 0, 0)`).
+- **Zero Color Bleeding**: Transparent pixels are explicitly zeroed out in RGB channels (`0, 0, 0, 0`) to prevent dirty fringes when blended over desktop backgrounds.
+
+### 8.4. Deterministic Median-Cut Color Quantization
+- **Algorithm**: Deterministic Median-Cut clustering.
+  - Opaque pixels are recursively split into bounding boxes along the color channel with the widest range (`max(maxR - minR, maxG - minG, maxB - minB)`).
+  - Channel tie-breaking is fixed deterministically: `Red` -> `Green` -> `Blue`.
+  - Splitting uses the median of sorted channel values with deterministic secondary and tertiary color sorting.
+- **Palette Limits**: Default `maxOpaqueColors: 16`. Configurable between `2` and `256`.
+- **Dithering Policy**: Dithering is disabled by default (`dither: false`) to preserve sharp, clean pixel-art boundaries. Optional Floyd-Steinberg error diffusion is available when explicitly requested.
+
+### 8.5. Nearest-Neighbor Downscaling Semantics
+- **Resampling Kernel**: `sharp.kernel.nearest` is enforced during downscaling.
+- **No Interpolation Blur**: Downscaling with nearest-neighbor produces authentic pixel clusters rather than blurred bicubic/Lanczos gradients.
+
+### 8.6. Sprite Storage Model & Traversal Defense
+- **Location**: Application-controlled directory `pixelpal_sprites` (`os.tmpdir() / "pixelpal_sprites"`).
+- **ID Format**: `sprite_char_<timestamp>_<randomHex>` (validated via `/^sprite_char_\d+_[a-f0-9]{8,32}$/`).
+- **File System Permissions**: Stored with POSIX `0o600` (owner read/write only).
+- **Rollback & Lifecycle**: Automatic rollback on failure; scoped cleanup (`cleanup`, `cleanupAll`) only touches files matching the sprite storage ID format, leaving other directories and unrelated files untouched.
+
+### 8.7. Determinism & Privacy Guarantees
+- **Cryptographic Reproducibility**: Given identical input bytes and options, the processor produces identical pixel buffers and identical SHA-256 digests across repeated executions.
+- **Privacy**: All EXIF, IPTC, XMP, GPS, and camera metadata are stripped during PNG output.
+- **Zero Network Access**: Completely offline execution.
+
+### 8.8. Structured Error Taxonomy
+| Error Code | Meaning |
+| :--- | :--- |
+| `PIXEL_SOURCE_INVALID` | Source reference missing, file missing, traversal attempt, or path outside generated storage |
+| `PIXEL_DECODE_FAILED` | File corrupted, zero bytes, or invalid image stream |
+| `PIXEL_UNSUPPORTED_FORMAT` | Unsupported image format (requires PNG/JPEG/WebP) |
+| `PIXEL_RESOURCE_LIMIT` | Image exceeds dimension or pixel bounds (e.g. > 8192×8192) |
+| `PIXEL_RESIZE_FAILED` | Resize processing failure or invalid dimension configuration |
+| `PIXEL_QUANTIZATION_FAILED` | Quantization algorithm execution failure |
+| `PIXEL_OUTPUT_FAILED` | PNG re-encoding failure |
+| `PIXEL_STORAGE_FAILED` | File system persistence error |
+
+### 8.9. Distinction Across Pipeline Phases
+- **Phase 3 (Generate)**: Employs AI (`gpt-image-2.5-sunburst`) to generate a full-fidelity chibi/pixel character illustration (1024×1024).
+- **Phase 4 (Pixel Process)**: Converts the high-resolution illustration into a deterministic, quantized, nearest-neighbor 64×64 sprite asset.
+- **Phase 5 (Profile & Persistence)**: Links the sprite asset to a `CharacterProfile`, SQLite storage, and animation state machine.
+- *Note*: Phase 4 produces the base sprite asset; it does not generate multi-frame animation sheets.

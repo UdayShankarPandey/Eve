@@ -43,6 +43,16 @@ export {
   type GenerateCharacterSuccessResult,
   type GenerateCharacterFailureResult,
   type GenerateCharacterResult,
+  type SpriteDimension,
+  type PixelProcessOptions,
+  type PixelProcessRequest,
+  type SpriteImageMetadata,
+  type PixelProcessExecutionInfo,
+  type PixelProcessErrorCode,
+  type PixelProcessError,
+  type PixelProcessSuccessResult,
+  type PixelProcessFailureResult,
+  type PixelProcessResult,
 } from "../../../../packages/shared-types/src/character.ts";
 
 
@@ -190,3 +200,18 @@ export type {
 export type {
   CharacterPromptBuildResult,
 } from "./prompt_builder.ts";
+
+export type {
+  SpriteStorageRecord,
+  SpriteStorageAdapter,
+} from "./sprite_storage.ts";
+
+export type {
+  RgbColor,
+  QuantizeOptions,
+  QuantizeResult,
+} from "./color_quantizer.ts";
+
+export type {
+  PixelArtProcessorOptions,
+} from "./pixel_processor.ts";

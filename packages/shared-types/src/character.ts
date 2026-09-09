@@ -468,3 +468,119 @@ export interface GenerateCharacterFailureResult {
 export type GenerateCharacterResult =
   | GenerateCharacterSuccessResult
   | GenerateCharacterFailureResult;
+
+/**
+ * Supported canonical pixel-art sprite dimensions.
+ * Canonical animation engine standard is 64x64; optional 128x128 for high-res sprite view.
+ */
+export type SpriteDimension = 64 | 128;
+
+/**
+ * Options controlling deterministic pixel processing.
+ */
+export interface PixelProcessOptions {
+  /** Target square canvas dimension (default: 64) */
+  readonly targetDimension?: SpriteDimension;
+  /** Maximum number of opaque colors allowed in quantized palette (default: 16, min: 2, max: 256) */
+  readonly maxOpaqueColors?: number;
+  /** Alpha cutoff threshold for binary transparency (0-255, default: 128) */
+  readonly alphaThreshold?: number;
+  /** Dithering toggle (default: false for crisp pixel art) */
+  readonly dithering?: boolean;
+}
+
+/**
+ * Input request for pixel-art sprite processing.
+ */
+export interface PixelProcessRequest {
+  /** Reference to approved Phase 3 generated image asset */
+  readonly source:
+    | GenerateCharacterSuccessResult
+    | {
+        readonly generatedStorageId: string;
+        readonly generatedFilePath: string;
+      };
+  /** Processing options */
+  readonly options?: PixelProcessOptions;
+  /** Optional client metadata */
+  readonly metadata?: {
+    readonly clientRequestId?: string;
+    readonly requestedAt?: number;
+  };
+}
+
+/**
+ * Verified metadata for the processed pixel-art sprite asset.
+ */
+export interface SpriteImageMetadata {
+  readonly format: "png";
+  readonly mimeType: "image/png";
+  readonly width: number;
+  readonly height: number;
+  readonly sizeBytes: number;
+  readonly hasAlpha: boolean;
+  readonly opaqueColorCount: number;
+  readonly sha256: string;
+}
+
+/**
+ * Execution metrics for pixel processing.
+ */
+export interface PixelProcessExecutionInfo {
+  readonly sourceDimensions: { readonly width: number; readonly height: number };
+  readonly targetDimensions: { readonly width: number; readonly height: number };
+  readonly colorsUsed: number;
+  readonly alphaThreshold: number;
+  readonly durationMs: number;
+}
+
+/**
+ * Structured error codes for pixel processing failures.
+ */
+export type PixelProcessErrorCode =
+  | "PIXEL_SOURCE_INVALID"
+  | "PIXEL_DECODE_FAILED"
+  | "PIXEL_RESOURCE_LIMIT"
+  | "PIXEL_UNSUPPORTED_FORMAT"
+  | "PIXEL_QUANTIZATION_FAILED"
+  | "PIXEL_RESIZE_FAILED"
+  | "PIXEL_OUTPUT_FAILED"
+  | "PIXEL_STORAGE_FAILED";
+
+/**
+ * Structured error details for pixel processing failure.
+ */
+export interface PixelProcessError {
+  readonly code: PixelProcessErrorCode;
+  readonly message: string;
+  readonly details?: Record<string, unknown>;
+}
+
+/**
+ * Successful outcome of pixel processing.
+ */
+export interface PixelProcessSuccessResult {
+  readonly success: true;
+  readonly spriteStorageId: string;
+  readonly sourceStorageId: string;
+  readonly spriteFilePath: string;
+  readonly metadata: SpriteImageMetadata;
+  readonly processingInfo: PixelProcessExecutionInfo;
+  readonly createdAt: number;
+}
+
+/**
+ * Failed outcome of pixel processing.
+ */
+export interface PixelProcessFailureResult {
+  readonly success: false;
+  readonly error: PixelProcessError;
+  readonly sourceStorageId?: string;
+}
+
+/**
+ * Complete result union for pixel-art processing boundary.
+ */
+export type PixelProcessResult =
+  | PixelProcessSuccessResult
+  | PixelProcessFailureResult;
