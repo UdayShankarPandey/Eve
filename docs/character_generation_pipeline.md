@@ -461,3 +461,66 @@ While the pipeline is fully automated and headless, pixel artists can manually t
 - **Durable Identity**: `CharacterProfile` JSON documents reside in `<appDataDir>/profiles/`.
 - **Companion Asset Packs**: Final validated expression assets are indexed by stable asset ID and referenced via application sprite paths (`/assets/sprites/<characterId>/<expression>.png`).
 - **Temporary Cache**: Raw upload, preprocessed, generated, and scratch files remain in temporary storage (`os.tmpdir()`).
+
+---
+
+## 11. Sprint 8 — Personality Engine & Behavioral Integration
+
+Sprint 8 achieves the roadmap goal: *"Make the same event feel different depending on the selected personality."*
+
+```text
+Desktop Event (Native OS Detectors)
+        │
+        ▼
+EventBus (Typed Dispatches)
+        │
+        ▼
+ReactionResolver (Deterministic Priority, Cooldown, Active State)
+        │
+        ▼  [Accepted Reaction Rule]
+PersonalityEngine (Config-Driven Presentation Shaping)
+   ├── Personality Profiles (Cute, Friendly, Sarcastic, Chaotic, Calm, Professional)
+   ├── Preferred Expression Modulation (Sprint 7 Expression Mapping)
+   ├── Reaction Frequency Gating (Critical priority >= 80 NEVER suppressed)
+   ├── Local Deterministic Dialogue Templates (Safe regex interpolation: {var})
+   └── Offline-First AI Boundary (Optional LLM enhancement with guaranteed local fallback)
+        │
+        ▼
+Presentation Contract (AnimationId, DialogueText, NotificationIntensity)
+```
+
+### 11.1. Conceptual Separation: Identity vs. Behavior
+- **CharacterProfile (Sprint 6)**: Answers *"WHO is this character?"* (hair, clothing, palette, proportions, asset references).
+- **PersonalityConfig (Sprint 8)**: Answers *"HOW does this character behave?"* (dialogue tone, preferred expression choice, reaction frequency, notification intensity).
+Changing personality never alters the character's immutable identity or regenerates a new `characterId`.
+
+### 11.2. Canonical 6 MVP Personality Taxonomy
+1. **Cute**: Cheerful, highly expressive, affectionate, playful.
+2. **Friendly (Default)**: Supportive, warm, balanced, welcoming.
+3. **Sarcastic**: Dry humor, witty, context-sensitive playful teasing (strictly non-abusive).
+4. **Chaotic**: High-energy, dramatic, eccentric, high expressive variety.
+5. **Calm**: Composed, gentle, peaceful, low notification intensity.
+6. **Professional**: Concise, formal, structured, productivity-focused.
+
+### 11.3. Local Dialogue Templates & Safe Interpolation
+- **Event Coverage**: 12 canonical MVP events across all 6 personalities (72 deterministic combinations).
+- **Variables**: Bounded variables (`battery_percent`, `ac_line_status`, `network_connected`, `network_type`, `app_name`, `filename`, `idle_minutes`).
+- **Template Security**: Controlled regex interpolation (`/\{([a-zA-Z0-9_]+)\}/g`). Zero `eval()` or `new Function()`. Prototype properties disbarred. Unknown variables remain inert (`[var]`).
+
+### 11.4. Behavioral Shaping & Critical Safety Invariant
+- **Expression Modulation**: Active profile's `preferredExpressions` refines standard animation to a specific Sprint 7 expression (e.g., Cute uses `celebrate` on downloads; Chaotic uses `panic` on battery warnings).
+- **Reaction Frequency**:
+  - `high`: All reactions presented.
+  - `normal`: Routine pacing.
+  - `low`: Routine/low-priority reactions (priority $\le 30$, e.g. user idle, app opened) are suppressed.
+  - **CRITICAL SAFETY INVARIANT**: Reactions with priority $\ge 80$ (`BATTERY_CRITICAL`, `BATTERY_LOW`, `NETWORK_DISCONNECTED`) are **NEVER** suppressed by frequency configuration.
+- **Notification Intensity**: Typed visual/audio presentation intent (`quiet`, `normal`, `expressive`) without hijacking arbitrary OS APIs.
+
+### 11.5. Offline-First AI Boundary
+- **Local Fallback Priority**: Local templates are always evaluated first. AI is 100% opt-in.
+- **Resilience**: If the AI provider throws, times out (2500ms), or returns malformed text, the engine immediately and seamlessly returns the local template fallback.
+- **Security**: Renderer bundles never receive `OPENAI_API_KEY`. AI output cannot execute OS actions.
+
+### 11.6. Durable Persistence
+- Persisted in `<appDataDir>/personality.json` using atomic write patterns (`.tmp` write followed by rename) with mode `0o600`.
+- Corrupt or missing configuration safely recovers to `DEFAULT_PERSONALITY_CONFIG` without crashing.
