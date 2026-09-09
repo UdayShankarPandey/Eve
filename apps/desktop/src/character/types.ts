@@ -28,7 +28,23 @@ export {
   type PreprocessSuccessResult,
   type PreprocessFailureResult,
   type PreprocessResult,
+  type CharacterRenderingStyle,
+  type ChibiProportions,
+  type CharacterExpression,
+  type PaletteMood,
+  type DetailLevel,
+  type BackgroundIntent,
+  type CharacterStyleOptions,
+  type CharacterGenerationOptions,
+  type GenerateCharacterRequest,
+  type GeneratedImageMetadata,
+  type CharacterGenerationErrorCode,
+  type CharacterGenerationError,
+  type GenerateCharacterSuccessResult,
+  type GenerateCharacterFailureResult,
+  type GenerateCharacterResult,
 } from "../../../../packages/shared-types/src/character.ts";
+
 
 import type {
   ImageFormat,
@@ -151,3 +167,26 @@ export interface ImagePreprocessorOptions {
   /** Custom background removal strategy */
   readonly backgroundRemovalStrategy?: BackgroundRemovalStrategy;
 }
+
+export type {
+  CharacterGenerationProvider,
+  ProviderGenerationRequest,
+  ProviderGenerationResponse,
+} from "./generation_provider.ts";
+
+export type {
+  GeneratedStorageRecord,
+  GeneratedStorageAdapter,
+} from "./generated_storage.ts";
+
+export type {
+  CharacterGeneratorOptions,
+} from "./generator.ts";
+
+export type {
+  OpenAIProviderOptions,
+} from "./openai_provider.ts";
+
+export type {
+  CharacterPromptBuildResult,
+} from "./prompt_builder.ts";

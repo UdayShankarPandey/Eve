@@ -288,3 +288,183 @@ export interface PreprocessFailureResult {
  * Complete result union for preprocessing boundary.
  */
 export type PreprocessResult = PreprocessSuccessResult | PreprocessFailureResult;
+
+/**
+ * Visual rendering styles for character generation.
+ */
+export type CharacterRenderingStyle =
+  | "chibi-pixel-art"
+  | "retro-arcade"
+  | "modern-isometric"
+  | "classic-16bit";
+
+/**
+ * Anatomical proportions for character generation.
+ */
+export type ChibiProportions =
+  | "super-deformed"
+  | "subtle-chibi"
+  | "standard-mascot";
+
+/**
+ * Base facial/postural expression for character generation.
+ */
+export type CharacterExpression =
+  | "friendly-idle"
+  | "happy"
+  | "curious"
+  | "focused"
+  | "confident";
+
+/**
+ * Color palette atmosphere for character generation.
+ */
+export type PaletteMood =
+  | "vibrant"
+  | "pastel"
+  | "warm"
+  | "cool"
+  | "original-fidelity";
+
+/**
+ * Level of visual detail for character generation.
+ */
+export type DetailLevel = "high-fidelity" | "simplified-iconic";
+
+/**
+ * Target background intent for generated base character asset.
+ */
+export type BackgroundIntent =
+  | "solid-white"
+  | "transparent-ready"
+  | "minimal-backdrop";
+
+/**
+ * Controlled, strongly typed character style configuration.
+ * User-supplied text strings are forbidden to prevent prompt injection.
+ */
+export interface CharacterStyleOptions {
+  /** Core visual rendering aesthetic (default: 'chibi-pixel-art') */
+  readonly renderingStyle?: CharacterRenderingStyle;
+  /** Body and head proportion ratio (default: 'super-deformed') */
+  readonly proportions?: ChibiProportions;
+  /** Primary character expression (default: 'friendly-idle') */
+  readonly expression?: CharacterExpression;
+  /** Color mood applied to sprite palette (default: 'original-fidelity') */
+  readonly paletteMood?: PaletteMood;
+  /** Density of pixel details (default: 'high-fidelity') */
+  readonly detailLevel?: DetailLevel;
+  /** Background isolation intent (default: 'transparent-ready') */
+  readonly backgroundIntent?: BackgroundIntent;
+}
+
+/**
+ * Operational options for character generation execution.
+ */
+export interface CharacterGenerationOptions {
+  /** AI provider identifier (default: 'openai') */
+  readonly providerId?: string;
+  /** Target image generation model (default: 'gpt-image-2.5-sunburst') */
+  readonly model?: string;
+  /** Request timeout in milliseconds (default: 60,000) */
+  readonly timeoutMs?: number;
+  /** Maximum retry attempts for transient failures (default: 0) */
+  readonly maxRetries?: number;
+  /** Optional deterministic random seed if supported by provider */
+  readonly seed?: number;
+}
+
+/**
+ * Input request for controlled character generation.
+ */
+export interface GenerateCharacterRequest {
+  /** Reference to approved Phase 2 preprocessed image */
+  readonly source:
+    | PreprocessSuccessResult
+    | {
+        readonly processedStorageId: string;
+        readonly processedFilePath: string;
+      };
+  /** Controlled style configuration */
+  readonly style?: CharacterStyleOptions;
+  /** Execution and provider options */
+  readonly options?: CharacterGenerationOptions;
+  /** Optional client metadata */
+  readonly metadata?: {
+    readonly clientRequestId?: string;
+    readonly requestedAt?: number;
+  };
+}
+
+/**
+ * Metadata for generated intermediate character asset.
+ */
+export interface GeneratedImageMetadata {
+  readonly format: "png";
+  readonly mimeType: "image/png";
+  readonly width: number;
+  readonly height: number;
+  readonly sizeBytes: number;
+  readonly hasAlpha: boolean;
+  readonly sha256: string;
+}
+
+/**
+ * Structured error codes for character generation failures.
+ */
+export type CharacterGenerationErrorCode =
+  | "AI_CONFIGURATION_MISSING"
+  | "AI_AUTHENTICATION_FAILED"
+  | "AI_RATE_LIMITED"
+  | "AI_CONTENT_REJECTED"
+  | "AI_TIMEOUT"
+  | "AI_REQUEST_FAILED"
+  | "AI_INVALID_RESPONSE"
+  | "AI_OUTPUT_INVALID"
+  | "AI_OUTPUT_UNSUPPORTED"
+  | "AI_OUTPUT_STORAGE_FAILED"
+  | "INVALID_SOURCE_IMAGE"
+  | "INVALID_STYLE_CONFIGURATION";
+
+/**
+ * Structured error details for character generation failure.
+ */
+export interface CharacterGenerationError {
+  readonly code: CharacterGenerationErrorCode;
+  readonly message: string;
+  readonly provider?: string;
+  readonly details?: Record<string, unknown>;
+}
+
+/**
+ * Successful outcome of character generation.
+ */
+export interface GenerateCharacterSuccessResult {
+  readonly success: true;
+  readonly generationId: string;
+  readonly sourceStorageId: string;
+  readonly generatedStorageId: string;
+  readonly generatedFilePath: string;
+  readonly metadata: GeneratedImageMetadata;
+  readonly provider: string;
+  readonly model: string;
+  readonly promptUsed: string;
+  readonly createdAt: number;
+}
+
+/**
+ * Failed outcome of character generation.
+ */
+export interface GenerateCharacterFailureResult {
+  readonly success: false;
+  readonly error: CharacterGenerationError;
+  readonly sourceStorageId?: string;
+  readonly provider?: string;
+}
+
+/**
+ * Complete result union for character generation boundary.
+ */
+export type GenerateCharacterResult =
+  | GenerateCharacterSuccessResult
+  | GenerateCharacterFailureResult;
