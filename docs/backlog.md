@@ -14,6 +14,7 @@
 - [ ] Implement basic privacy permissions manager (dummy UI to start)
 
 ## P1 — Core Value (Character & Interaction)
+- [x] Character Upload & Image Validation Foundation (Sprint 6 Phase 1)
 - [ ] Photo upload UI
 - [ ] Integrate placeholder AI photo-to-chibi generation pipeline
 - [ ] Pixel-art conversion pipeline

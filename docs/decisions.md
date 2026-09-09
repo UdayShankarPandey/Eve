@@ -52,3 +52,8 @@
 - **Decision**: Use sprite sheets and CSS/canvas for animations.
 - **Reason**: Simple to implement, low overhead, and aligns perfectly with the "pixel character" aesthetic.
 - **Consequences**: Animations are discrete rather than procedurally generated skeletal animations.
+
+## 11. Secure Local Image Upload Boundary & Anti-Spoofing Validation
+- **Decision**: Implement a strict local upload boundary enforcing magic-byte inspection, dimension/size limits, path traversal defenses, and application-owned temporary staging before any processing.
+- **Reason**: User-provided image uploads represent untrusted external input. Relying on file extensions is vulnerable to spoofing, malware execution, or decompression bomb DoS attacks. Staging files locally in isolated temporary storage protects user privacy and preserves the local-first architecture.
+- **Consequences**: Uploads require upfront binary decoding of JPEG, PNG, and WebP headers. Corrupted or malicious files are rejected immediately with structured diagnostics.
