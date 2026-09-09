@@ -146,8 +146,7 @@ export function findNearestColor(
   let minDistance = Infinity;
   let nearest = palette[0];
 
-  for (let i = 0; i < palette.length; i++) {
-    const c = palette[i];
+  for (const c of palette) {
     const dr = pixel.r - c.r;
     const dg = pixel.g - c.g;
     const db = pixel.b - c.b;

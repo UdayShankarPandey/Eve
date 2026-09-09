@@ -176,6 +176,20 @@ export function isValidCharacterId(id: unknown): id is string {
 }
 
 /**
+ * Formats an unknown value safely for validation error messages, preventing [object Object].
+ */
+function safeString(val: unknown): string {
+  if (typeof val === "object" && val !== null) {
+    try {
+      return JSON.stringify(val);
+    } catch {
+      return "[object]";
+    }
+  }
+  return String(val);
+}
+
+/**
  * Validates style options against allowed closed enums.
  */
 export function validateStyleOptions(style: unknown): CharacterProfileError[] {
@@ -193,7 +207,7 @@ export function validateStyleOptions(style: unknown): CharacterProfileError[] {
   if (s.renderingStyle !== undefined && !VALID_RENDERING_STYLES.has(s.renderingStyle as CharacterRenderingStyle)) {
     errors.push({
       code: "CHARACTER_STYLE_INVALID",
-      message: `Invalid renderingStyle: '${String(s.renderingStyle)}'`,
+      message: `Invalid renderingStyle: '${safeString(s.renderingStyle)}'`,
       details: { allowed: Array.from(VALID_RENDERING_STYLES) },
     });
   }
@@ -201,7 +215,7 @@ export function validateStyleOptions(style: unknown): CharacterProfileError[] {
   if (s.proportions !== undefined && !VALID_PROPORTIONS.has(s.proportions as ChibiProportions)) {
     errors.push({
       code: "CHARACTER_STYLE_INVALID",
-      message: `Invalid proportions: '${String(s.proportions)}'`,
+      message: `Invalid proportions: '${safeString(s.proportions)}'`,
       details: { allowed: Array.from(VALID_PROPORTIONS) },
     });
   }
@@ -209,7 +223,7 @@ export function validateStyleOptions(style: unknown): CharacterProfileError[] {
   if (s.expression !== undefined && !VALID_EXPRESSIONS.has(s.expression as CharacterExpression)) {
     errors.push({
       code: "CHARACTER_STYLE_INVALID",
-      message: `Invalid expression: '${String(s.expression)}'`,
+      message: `Invalid expression: '${safeString(s.expression)}'`,
       details: { allowed: Array.from(VALID_EXPRESSIONS) },
     });
   }
@@ -217,7 +231,7 @@ export function validateStyleOptions(style: unknown): CharacterProfileError[] {
   if (s.paletteMood !== undefined && !VALID_PALETTE_MOODS.has(s.paletteMood as PaletteMood)) {
     errors.push({
       code: "CHARACTER_STYLE_INVALID",
-      message: `Invalid paletteMood: '${String(s.paletteMood)}'`,
+      message: `Invalid paletteMood: '${safeString(s.paletteMood)}'`,
       details: { allowed: Array.from(VALID_PALETTE_MOODS) },
     });
   }
@@ -225,7 +239,7 @@ export function validateStyleOptions(style: unknown): CharacterProfileError[] {
   if (s.detailLevel !== undefined && !VALID_DETAIL_LEVELS.has(s.detailLevel as DetailLevel)) {
     errors.push({
       code: "CHARACTER_STYLE_INVALID",
-      message: `Invalid detailLevel: '${String(s.detailLevel)}'`,
+      message: `Invalid detailLevel: '${safeString(s.detailLevel)}'`,
       details: { allowed: Array.from(VALID_DETAIL_LEVELS) },
     });
   }
@@ -233,7 +247,7 @@ export function validateStyleOptions(style: unknown): CharacterProfileError[] {
   if (s.backgroundIntent !== undefined && !VALID_BACKGROUND_INTENTS.has(s.backgroundIntent as BackgroundIntent)) {
     errors.push({
       code: "CHARACTER_STYLE_INVALID",
-      message: `Invalid backgroundIntent: '${String(s.backgroundIntent)}'`,
+      message: `Invalid backgroundIntent: '${safeString(s.backgroundIntent)}'`,
       details: { allowed: Array.from(VALID_BACKGROUND_INTENTS) },
     });
   }
@@ -429,7 +443,7 @@ export function validateAssetReferences(assets: unknown): CharacterProfileError[
     if (typeof a.processedImageId !== "string" || !PROCESSED_STORAGE_ID_REGEX.test(a.processedImageId)) {
       errors.push({
         code: "CHARACTER_ASSET_INVALID",
-        message: `Invalid processedImageId format: '${String(a.processedImageId)}'`,
+        message: `Invalid processedImageId format: '${safeString(a.processedImageId)}'`,
       });
     }
   }
@@ -439,7 +453,7 @@ export function validateAssetReferences(assets: unknown): CharacterProfileError[
     if (typeof a.sourceUploadId !== "string" || !UPLOAD_STORAGE_ID_REGEX.test(a.sourceUploadId)) {
       errors.push({
         code: "CHARACTER_ASSET_INVALID",
-        message: `Invalid sourceUploadId format: '${String(a.sourceUploadId)}'`,
+        message: `Invalid sourceUploadId format: '${safeString(a.sourceUploadId)}'`,
       });
     }
   }
@@ -518,17 +532,13 @@ export function validateProfile(profile: unknown): { valid: boolean; errors: Cha
     });
   }
 
-  // 4. Asset References
-  errors.push(...validateAssetReferences(p.assets));
-
-  // 5. Style Options
-  errors.push(...validateStyleOptions(p.style));
-
-  // 6. Clothing Configuration
-  errors.push(...validateClothingConfiguration(p.clothing));
-
-  // 7. Palette Configuration
-  errors.push(...validatePaletteConfiguration(p.palette));
+  // 4-7. Asset References, Style, Clothing, Palette
+  errors.push(
+    ...validateAssetReferences(p.assets),
+    ...validateStyleOptions(p.style),
+    ...validateClothingConfiguration(p.clothing),
+    ...validatePaletteConfiguration(p.palette)
+  );
 
   // 8. Metadata (optional)
   if (p.metadata !== undefined) {

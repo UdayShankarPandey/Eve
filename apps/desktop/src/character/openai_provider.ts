@@ -176,14 +176,12 @@ export class OpenAIImageGenerationProvider implements CharacterGenerationProvide
           }
         );
       }
-    } else {
-      if (!capability.supportsGenerate) {
-        throw new ProviderError(
-          "AI_REQUEST_FAILED",
-          `Model '${model}' does not support direct image generation (images.generate).`,
-          { model, operation: "images.generate" }
-        );
-      }
+    } else if (!capability.supportsGenerate) {
+      throw new ProviderError(
+        "AI_REQUEST_FAILED",
+        `Model '${model}' does not support direct image generation (images.generate).`,
+        { model, operation: "images.generate" }
+      );
     }
 
     try {
@@ -393,6 +391,6 @@ export class OpenAIImageGenerationProvider implements CharacterGenerationProvide
   private sanitizeErrorMessage(msg: string): string {
     return msg
       .replace(/sk-[a-zA-Z0-9_-]{20,}/g, "[REDACTED_API_KEY]")
-      .replace(/Bearer\s+[a-zA-Z0-9._-]+/gi, "Bearer [REDACTED_TOKEN]");
+      .replace(/Bearer\s+[a-z0-9._-]+/gi, "Bearer [REDACTED_TOKEN]");
   }
 }

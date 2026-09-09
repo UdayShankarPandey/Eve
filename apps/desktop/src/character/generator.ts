@@ -13,6 +13,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as crypto from "node:crypto";
 import sharp, { type Metadata, type OutputInfo } from "sharp";
 import {
   FileSystemGeneratedStorageAdapter,
@@ -66,14 +67,14 @@ export function generateGenerationId(): string {
   const timestamp = Date.now();
   let randomHex: string;
 
-  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+  if (typeof crypto.getRandomValues === "function") {
     const bytes = new Uint8Array(6);
     crypto.getRandomValues(bytes);
     randomHex = Array.from(bytes)
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
   } else {
-    randomHex = Math.random().toString(16).slice(2, 14);
+    randomHex = crypto.randomBytes(6).toString("hex");
   }
 
   return `gen_${timestamp}_${randomHex}`;
@@ -387,7 +388,7 @@ export class CharacterGenerator {
   /**
    * Cleans up expired generated character files.
    */
-  public async cleanupExpired(maxAgeMs: number = 7200_000): Promise<number> {
+  public async cleanupExpired(maxAgeMs: number = 7_200_000): Promise<number> {
     return this.storage.cleanupExpired(maxAgeMs);
   }
 

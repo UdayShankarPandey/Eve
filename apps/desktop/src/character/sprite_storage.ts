@@ -10,6 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import * as crypto from "node:crypto";
 
 /**
  * Storage record for a processed sprite character image asset.
@@ -43,16 +44,14 @@ export function generateSpriteStorageId(): string {
   const timestamp = Date.now();
   let randomHex: string;
 
-  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+  if (typeof crypto.getRandomValues === "function") {
     const bytes = new Uint8Array(8);
     crypto.getRandomValues(bytes);
     randomHex = Array.from(bytes)
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
   } else {
-    randomHex =
-      Math.random().toString(16).slice(2, 10) +
-      Math.random().toString(16).slice(2, 10);
+    randomHex = crypto.randomBytes(8).toString("hex");
   }
 
   return `sprite_char_${timestamp}_${randomHex}`;

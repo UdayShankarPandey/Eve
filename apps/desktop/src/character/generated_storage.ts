@@ -10,6 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import * as crypto from "node:crypto";
 
 /**
  * Storage record for a generated character image asset.
@@ -43,16 +44,14 @@ export function generateGeneratedStorageId(): string {
   const timestamp = Date.now();
   let randomHex: string;
 
-  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+  if (typeof crypto.getRandomValues === "function") {
     const bytes = new Uint8Array(8);
     crypto.getRandomValues(bytes);
     randomHex = Array.from(bytes)
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
   } else {
-    randomHex =
-      Math.random().toString(16).slice(2, 10) +
-      Math.random().toString(16).slice(2, 10);
+    randomHex = crypto.randomBytes(8).toString("hex");
   }
 
   return `generated_char_${timestamp}_${randomHex}`;
@@ -176,7 +175,7 @@ export class FileSystemGeneratedStorageAdapter implements GeneratedStorageAdapte
     }
   }
 
-  public async cleanupExpired(maxAgeMs: number = 7200_000): Promise<number> {
+  public async cleanupExpired(maxAgeMs: number = 7_200_000): Promise<number> {
     this.ensureBaseDirectory();
     let deletedCount = 0;
     const now = Date.now();

@@ -126,7 +126,7 @@ export class PixelArtProcessor {
 
     try {
       // 1. Validate source reference contract
-      if (!request || !request.source) {
+      if (!request?.source) {
         throw new PixelProcessingError(
           "PIXEL_SOURCE_INVALID",
           "Pixel processing requires a valid Phase 3 generated image reference."

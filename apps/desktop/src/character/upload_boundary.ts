@@ -155,7 +155,7 @@ export class ImageUploadBoundary {
   /**
    * Cleans up all temporary files older than the specified age in milliseconds.
    */
-  public async cleanupExpired(maxAgeMs: number = 3600_000): Promise<number> {
+  public async cleanupExpired(maxAgeMs: number = 3_600_000): Promise<number> {
     return this.storage.cleanupExpired(maxAgeMs);
   }
 

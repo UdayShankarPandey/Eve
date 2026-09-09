@@ -10,6 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import * as crypto from "node:crypto";
 import type {
   ImageFormat,
   StagedImageRecord,
@@ -35,21 +36,22 @@ const FORMAT_EXTENSIONS: Record<ImageFormat, string> = {
 };
 
 /**
- * Generates a collision-resistant, cryptographically secure unique storage ID.
- * Example: 'char_upload_1725888000000_a1b2c3d4e5f67890'
+ * Generates a collision-resistant unique ID for staged upload records.
+ * Format: char_upload_<timestamp>_<randomHex>
+ * Example: 'char_upload_1725888000000_1a2b3c4d5e6f7890'
  */
 export function generateStorageId(): string {
   const timestamp = Date.now();
   let randomHex: string;
 
-  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+  if (typeof crypto.getRandomValues === "function") {
     const bytes = new Uint8Array(8);
     crypto.getRandomValues(bytes);
     randomHex = Array.from(bytes)
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
   } else {
-    randomHex = Math.random().toString(16).slice(2, 10) + Math.random().toString(16).slice(2, 10);
+    randomHex = crypto.randomBytes(8).toString("hex");
   }
 
   return `char_upload_${timestamp}_${randomHex}`;
@@ -83,7 +85,7 @@ export function sanitizeFileName(rawFileName?: string): string {
   clean = clean.replace(/\.\.+/g, "");
 
   // 4. Remove leading/trailing dots and spaces
-  clean = clean.trim().replace(/^\.+|\.+$/g, "");
+  clean = clean.trim().replace(/^\.+/, "").replace(/\.+$/, "");
 
   // 5. Replace any remaining hazardous characters with underscores
   clean = clean.replace(/[^a-zA-Z0-9._-]/g, "_");

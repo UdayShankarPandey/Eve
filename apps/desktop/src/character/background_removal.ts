@@ -101,9 +101,7 @@ export class CornerChromaBackgroundRemovalStrategy implements BackgroundRemovalS
       const b = output[offset + 2];
 
       // Euclidean color distance in RGB space
-      const distance = Math.sqrt(
-        (r - avgR) ** 2 + (g - avgG) ** 2 + (b - avgB) ** 2
-      );
+      const distance = Math.hypot(r - avgR, g - avgG, b - avgB);
 
       if (distance <= threshold) {
         output[offset + 3] = 0; // Fully transparent

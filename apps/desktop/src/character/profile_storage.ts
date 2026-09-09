@@ -9,6 +9,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as crypto from "node:crypto";
 import type {
   CharacterProfile,
 } from "../../../../packages/shared-types/src/character.ts";
@@ -16,12 +17,9 @@ import {
   isValidCharacterId,
   validateProfile,
 } from "./profile_validator.ts";
-import {
-  getDefaultProfileStorageDir,
-  getDesktopAppDataDir,
-} from "./paths.ts";
+import { getDefaultProfileStorageDir } from "./paths.ts";
 
-export { getDefaultProfileStorageDir, getDesktopAppDataDir };
+export { getDefaultProfileStorageDir, getDesktopAppDataDir } from "./paths.ts";
 
 /**
  * Metadata record for a persisted CharacterProfile on disk.
@@ -57,16 +55,14 @@ export function generateCharacterId(): string {
   const timestamp = Date.now();
   let randomHex: string;
 
-  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+  if (typeof crypto.getRandomValues === "function") {
     const bytes = new Uint8Array(8);
     crypto.getRandomValues(bytes);
     randomHex = Array.from(bytes)
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
   } else {
-    randomHex =
-      Math.random().toString(16).slice(2, 10) +
-      Math.random().toString(16).slice(2, 10);
+    randomHex = crypto.randomBytes(8).toString("hex");
   }
 
   return `character_${timestamp}_${randomHex}`;
@@ -138,7 +134,7 @@ export class FileSystemProfileStorageAdapter implements ProfileStorageAdapter {
     const finalPath = this.resolveSecurePath(profile.characterId);
 
     // Atomic write pattern: write to .tmp.<random> in the same directory, then rename
-    const randomSuffix = Math.random().toString(16).slice(2, 10);
+    const randomSuffix = crypto.randomBytes(4).toString("hex");
     const tempPath = path.resolve(
       this.baseDir,
       `${profile.characterId}.tmp.${randomSuffix}`

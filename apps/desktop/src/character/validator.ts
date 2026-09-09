@@ -56,9 +56,8 @@ export async function computeSha256Hex(data: Uint8Array): Promise<string> {
   } catch {
     // Deterministic simple hash fallback if crypto is completely unavailable (unlikely)
     let hash = 0;
-    for (let i = 0; i < data.length; i++) {
-      hash = (hash << 5) - hash + data[i];
-      hash |= 0;
+    for (const byte of data) {
+      hash = Math.trunc((hash << 5) - hash + byte);
     }
     return Math.abs(hash).toString(16).padStart(64, "0");
   }
@@ -107,7 +106,7 @@ function parsePngDimensions(data: Uint8Array): ImageDimensions {
     throw new Error("Truncated PNG header: insufficient bytes for IHDR chunk");
   }
 
-  const chunkType = String.fromCharCode(data[12], data[13], data[14], data[15]);
+  const chunkType = String.fromCodePoint(data[12], data[13], data[14], data[15]);
   if (chunkType !== "IHDR") {
     throw new Error(`Corrupted PNG: expected IHDR chunk, found '${chunkType}'`);
   }
@@ -208,7 +207,7 @@ function parseWebpDimensions(data: Uint8Array): ImageDimensions {
     throw new Error("Truncated WebP: insufficient bytes for RIFF header");
   }
 
-  const chunkFourCC = String.fromCharCode(data[12], data[13], data[14], data[15]);
+  const chunkFourCC = String.fromCodePoint(data[12], data[13], data[14], data[15]);
 
   if (chunkFourCC === "VP8 ") {
     // Lossy WebP: keyframe header starts at offset 20

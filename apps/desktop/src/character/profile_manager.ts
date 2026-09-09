@@ -352,8 +352,7 @@ export class CharacterProfileManager {
       }
     }
 
-    const mergedMetadata =
-      updates.metadata !== undefined ? updates.metadata : current.metadata;
+    const mergedMetadata = updates.metadata ?? current.metadata;
 
     // Construct updated profile ensuring immutability of characterId and createdAt
     const updatedProfile: CharacterProfile = {
