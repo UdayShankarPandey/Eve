@@ -7,3 +7,6 @@ export * from "./types.ts";
 export * from "./validator.ts";
 export * from "./storage.ts";
 export * from "./upload_boundary.ts";
+export * from "./background_removal.ts";
+export * from "./processed_storage.ts";
+export * from "./preprocessor.ts";

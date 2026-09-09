@@ -164,3 +164,127 @@ export interface StagedImageRecord {
   readonly sizeBytes: number;
   readonly createdAt: number;
 }
+
+/**
+ * Framing and crop strategies for portrait normalization.
+ */
+export type CropMode = "center-crop-square" | "fit-preserve-aspect" | "none";
+
+/**
+ * Isolated background removal operational modes.
+ */
+export type BackgroundRemovalMode = "none" | "corner-chroma";
+
+/**
+ * Configuration options for image preprocessing.
+ */
+export interface PreprocessOptions {
+  /** Target bounding box or square dimensions (default: 512x512) */
+  readonly targetDimensions?: ImageDimensions;
+  /** Crop strategy (default: 'center-crop-square') */
+  readonly cropMode?: CropMode;
+  /** Background removal strategy mode (default: 'none') */
+  readonly backgroundRemovalMode?: BackgroundRemovalMode;
+  /** Sensitivity threshold for color-key removal (0-255, default: 25) */
+  readonly backgroundRemovalThreshold?: number;
+  /** Whether to normalize orientation using EXIF (default: true) */
+  readonly normalizeOrientation?: boolean;
+  /** Whether to strip GPS and camera metadata for privacy (default: true) */
+  readonly stripMetadata?: boolean;
+}
+
+/**
+ * Metadata for intermediate normalized processed image asset.
+ */
+export interface ProcessedImageMetadata {
+  readonly format: "png";
+  readonly mimeType: "image/png";
+  readonly width: number;
+  readonly height: number;
+  readonly sizeBytes: number;
+  readonly hasAlpha: boolean;
+  readonly sha256: string;
+}
+
+/**
+ * Diagnostics and execution metrics from the preprocessing pipeline.
+ */
+export interface PreprocessExecutionInfo {
+  readonly originalDimensions: ImageDimensions;
+  readonly cropApplied?: {
+    readonly left: number;
+    readonly top: number;
+    readonly width: number;
+    readonly height: number;
+  };
+  readonly orientationApplied?: number;
+  readonly backgroundRemoved: boolean;
+  readonly resampled: boolean;
+}
+
+/**
+ * Machine-readable error codes for image preprocessing failures.
+ */
+export type ImageProcessingErrorCode =
+  | "INVALID_SOURCE"
+  | "DECODE_FAILED"
+  | "UNSUPPORTED_RASTER"
+  | "ORIENTATION_FAILED"
+  | "CROP_FAILED"
+  | "BACKGROUND_REMOVAL_FAILED"
+  | "DIMENSION_NORMALIZATION_FAILED"
+  | "OUTPUT_WRITE_FAILED"
+  | "RESOURCE_LIMIT"
+  | "PROCESSING_TIMEOUT";
+
+/**
+ * Structured diagnostic error for preprocessing.
+ */
+export interface ImageProcessingError {
+  readonly code: ImageProcessingErrorCode;
+  readonly message: string;
+  readonly details?: Record<string, unknown>;
+}
+
+/**
+ * Input request to ImagePreprocessor.
+ */
+export interface PreprocessImageRequest {
+  /** Validated Phase 1 upload reference */
+  readonly source:
+    | UploadSuccessResult
+    | {
+        readonly storageId: string;
+        readonly tempFilePath: string;
+        readonly format: ImageFormat;
+      };
+  /** Custom preprocessing overrides */
+  readonly options?: PreprocessOptions;
+}
+
+/**
+ * Successful outcome of image preprocessing.
+ */
+export interface PreprocessSuccessResult {
+  readonly success: true;
+  readonly processedStorageId: string;
+  readonly processedFilePath: string;
+  readonly sourceStorageId: string;
+  readonly metadata: ProcessedImageMetadata;
+  readonly processingInfo: PreprocessExecutionInfo;
+  readonly createdAt: number;
+}
+
+/**
+ * Failed outcome of image preprocessing.
+ */
+export interface PreprocessFailureResult {
+  readonly success: false;
+  readonly errors: readonly ImageProcessingError[];
+  readonly sourceStorageId?: string;
+}
+
+/**
+ * Complete result union for preprocessing boundary.
+ */
+export type PreprocessResult = PreprocessSuccessResult | PreprocessFailureResult;

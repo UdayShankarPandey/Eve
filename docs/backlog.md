@@ -15,6 +15,7 @@
 
 ## P1 — Core Value (Character & Interaction)
 - [x] Character Upload & Image Validation Foundation (Sprint 6 Phase 1)
+- [x] Character Image Preprocessing Foundation (Sprint 6 Phase 2)
 - [ ] Photo upload UI
 - [ ] Integrate placeholder AI photo-to-chibi generation pipeline
 - [ ] Pixel-art conversion pipeline

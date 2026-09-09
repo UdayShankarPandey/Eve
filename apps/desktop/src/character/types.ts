@@ -17,12 +17,25 @@ export {
   type UploadResult,
   type UploadRequest,
   type StagedImageRecord,
+  type CropMode,
+  type BackgroundRemovalMode,
+  type PreprocessOptions,
+  type ProcessedImageMetadata,
+  type PreprocessExecutionInfo,
+  type ImageProcessingErrorCode,
+  type ImageProcessingError,
+  type PreprocessImageRequest,
+  type PreprocessSuccessResult,
+  type PreprocessFailureResult,
+  type PreprocessResult,
 } from "../../../../packages/shared-types/src/character.ts";
 
 import type {
   ImageFormat,
   ImageValidationConstraints,
   StagedImageRecord,
+  PreprocessOptions,
+  BackgroundRemovalMode,
 } from "../../../../packages/shared-types/src/character.ts";
 
 /**
@@ -80,4 +93,61 @@ export interface ImageUploadBoundaryOptions {
   defaultConstraints?: Partial<ImageValidationConstraints>;
   /** Optional base path for temporary disk storage */
   tempStorageDir?: string;
+}
+
+/**
+ * Strategy interface for isolated background removal implementations.
+ */
+export interface BackgroundRemovalStrategy {
+  /** The operational mode name */
+  readonly mode: BackgroundRemovalMode;
+  /**
+   * Process decoded raw RGBA raster buffer.
+   * Returns modified raw RGBA buffer with background made transparent.
+   */
+  removeBackground(
+    rawPixels: Uint8Array,
+    width: number,
+    height: number,
+    channels: number,
+    threshold?: number
+  ): Promise<{ rawPixels: Uint8Array; backgroundRemoved: boolean }>;
+}
+
+/**
+ * Storage record for an intermediate normalized processed image asset.
+ */
+export interface ProcessedStorageRecord {
+  readonly processedStorageId: string;
+  readonly processedFilePath: string;
+  readonly sizeBytes: number;
+  readonly createdAt: number;
+}
+
+/**
+ * Storage adapter interface for managed processed image output.
+ */
+export interface ProcessedStorageAdapter {
+  save(processedStorageId: string, data: Uint8Array): Promise<string>;
+  get(
+    processedStorageId: string
+  ): Promise<{ record: ProcessedStorageRecord; data: Uint8Array } | null>;
+  delete(processedStorageId: string): Promise<boolean>;
+  cleanupExpired(maxAgeMs: number): Promise<number>;
+  cleanupAll(): Promise<number>;
+  list(): Promise<readonly ProcessedStorageRecord[]>;
+}
+
+/**
+ * Options for configuring the ImagePreprocessor engine.
+ */
+export interface ImagePreprocessorOptions {
+  /** Storage adapter for persisting processed assets */
+  readonly storageAdapter?: ProcessedStorageAdapter;
+  /** Default preprocessing options */
+  readonly defaultOptions?: Partial<PreprocessOptions>;
+  /** Temporary directory base path for processed storage */
+  readonly processedStorageDir?: string;
+  /** Custom background removal strategy */
+  readonly backgroundRemovalStrategy?: BackgroundRemovalStrategy;
 }
