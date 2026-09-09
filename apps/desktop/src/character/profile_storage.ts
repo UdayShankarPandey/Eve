@@ -9,7 +9,6 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 import type {
   CharacterProfile,
 } from "../../../../packages/shared-types/src/character.ts";
@@ -17,6 +16,12 @@ import {
   isValidCharacterId,
   validateProfile,
 } from "./profile_validator.ts";
+import {
+  getDefaultProfileStorageDir,
+  getDesktopAppDataDir,
+} from "./paths.ts";
+
+export { getDefaultProfileStorageDir, getDesktopAppDataDir };
 
 /**
  * Metadata record for a persisted CharacterProfile on disk.
@@ -69,7 +74,9 @@ export function generateCharacterId(): string {
 
 /**
  * Production FileSystem Storage Adapter for CharacterProfile documents.
- * Manages an isolated folder (<tempDir>/pixelpal_profiles) with atomic writes and owner-only access.
+ * Manages an isolated folder (<appDataDir>/profiles) with atomic writes and owner-only access.
+ * While upload, preprocessed, generated, and sprite image caches reside in temporary storage,
+ * CharacterProfile documents are durable persistent application data.
  */
 export class FileSystemProfileStorageAdapter implements ProfileStorageAdapter {
   private readonly baseDir: string;
@@ -79,7 +86,7 @@ export class FileSystemProfileStorageAdapter implements ProfileStorageAdapter {
     if (customBaseDir) {
       this.baseDir = path.resolve(customBaseDir);
     } else {
-      this.baseDir = path.resolve(os.tmpdir(), "pixelpal_profiles");
+      this.baseDir = path.resolve(getDefaultProfileStorageDir());
     }
 
     this.ensureBaseDirectory();

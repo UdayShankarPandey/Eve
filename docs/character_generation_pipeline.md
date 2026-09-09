@@ -16,7 +16,7 @@ Sprint 6 Phase 5 concludes the Sprint 6 character generation epic by introducing
 3. **Asset Provenance & Non-Duplication**: Links to Phase 3 generated images (`generated_char_*`) and Phase 4 pixel sprites (`sprite_char_*`) by ID without duplicating raw image bytes or filesystem paths.
 4. **Controlled Clothing Configuration**: Records structured attire selections using closed enums (category, top, bottom, footwear, accessories, color theme), strictly eliminating prompt injection vulnerabilities.
 5. **Discrete Palette Representation**: Captures the actual extracted RGB palette colors, atmospheric mood, maximum opaque color count, and alpha threshold.
-6. **Safe Atomic Persistence**: Persists profiles as JSON documents in application-controlled storage (`pixelpal_profiles/`) with atomic write patterns (`.tmp` write followed by rename), POSIX `0o600` permissions, and traversal defense.
+6. **Safe Atomic Persistence**: Persists profiles as durable JSON documents in the desktop application's persistent application data directory (`<appDataDir>/profiles/`) with atomic write patterns (`.tmp` write followed by rename), POSIX `0o600` permissions, and traversal defense. Pipeline image caches (upload, processed, generated, sprite) remain in temporary storage.
 7. **Strict Immutability**: Enforces that `characterId` and `createdAt` can never be mutated, and ensures that profile operations never overwrite or delete underlying Phase 3 and Phase 4 image assets.
 
 ---
@@ -94,7 +94,7 @@ Closed-Union Style, Clothing & Quantized Palette Ingestion
 Canonical CharacterProfile Construction (`character_<id>`, schemaVersion: 1)
       │
       ▼
-Atomic File-Based Local Persistence (`pixelpal_profiles/<id>.json`)
+Atomic File-Based Persistent Storage (`<appDataDir>/profiles/<id>.json`)
 ```
 
 > [!IMPORTANT]
@@ -321,7 +321,8 @@ Directly captures the discrete quantized palette produced in Phase 4:
 - **`alphaThreshold`**: Integer between 0 and 255 (default 128).
 
 ### 9.6. Safe Atomic Persistence Model
-- **Storage Directory**: Application-controlled directory `pixelpal_profiles/` (`os.tmpdir() / "pixelpal_profiles"`). Mode `0o700`.
+- **Storage Directory**: Persistent application-controlled directory `<appDataDir>/profiles/` (resolved cross-platform via standard desktop conventions: Windows `%APPDATA%\com.pixelpal.desktop\profiles`, macOS `~/Library/Application Support/com.pixelpal.desktop/profiles`, Linux `$XDG_DATA_HOME/com.pixelpal.desktop/profiles` or `~/.local/share/com.pixelpal.desktop/profiles`). Mode `0o700`.
+- **Pipeline Intermediates vs. Profile Durability**: Upload (`pixelpal_uploads/`), preprocessed (`pixelpal_processed/`), generated (`pixelpal_generated/`), and sprite (`pixelpal_sprites/`) image assets reside in application-managed temporary storage (`os.tmpdir()`), whereas CharacterProfile documents represent persistent companion identity and are stored durably across OS restarts and temp maintenance cycles.
 - **File Naming**: `${characterId}.json` with POSIX mode `0o600` (owner read/write only).
 - **Atomic Write Pattern**:
   1. Profile is validated against `validateProfile()`.
