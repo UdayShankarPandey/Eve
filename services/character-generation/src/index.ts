@@ -1,6 +1,6 @@
 /**
  * PixelPal — Character Generation Service
- * Sprint 6 Phase 1, 2, 3 & 4: Upload Boundary, Preprocessing, Generation & Pixel Processing Entry Point
+ * Sprint 6 Phases 1–5: Complete AI Character Generation, Pixel Processing & Profile Entry Point
  */
 
 export * from "../../../packages/shared-types/src/character.ts";

@@ -53,6 +53,26 @@ export {
   type PixelProcessSuccessResult,
   type PixelProcessFailureResult,
   type PixelProcessResult,
+  type RgbColor,
+  type ClothingCategory,
+  type ClothingTop,
+  type ClothingBottom,
+  type ClothingFootwear,
+  type ClothingAccessory,
+  type ClothingColorTheme,
+  type ClothingConfiguration,
+  type TransparencyPolicy,
+  type PaletteConfiguration,
+  type CharacterProfileAssetReferences,
+  type CharacterProfileMetadata,
+  type CharacterProfile,
+  type CreateProfileRequest,
+  type UpdateProfileRequest,
+  type CharacterProfileErrorCode,
+  type CharacterProfileError,
+  type ProfileSuccessResult,
+  type ProfileFailureResult,
+  type ProfileOperationResult,
 } from "../../../../packages/shared-types/src/character.ts";
 
 
@@ -207,7 +227,6 @@ export type {
 } from "./sprite_storage.ts";
 
 export type {
-  RgbColor,
   QuantizeOptions,
   QuantizeResult,
 } from "./color_quantizer.ts";
@@ -215,3 +234,12 @@ export type {
 export type {
   PixelArtProcessorOptions,
 } from "./pixel_processor.ts";
+
+export type {
+  ProfileStorageRecord,
+  ProfileStorageAdapter,
+} from "./profile_storage.ts";
+
+export type {
+  CharacterProfileManagerOptions,
+} from "./profile_manager.ts";

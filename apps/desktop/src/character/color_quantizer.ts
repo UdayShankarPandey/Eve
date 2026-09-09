@@ -6,11 +6,7 @@
  * with first-class transparency awareness and zero external ML dependencies.
  */
 
-export interface RgbColor {
-  readonly r: number;
-  readonly g: number;
-  readonly b: number;
-}
+import type { RgbColor } from "../../../../packages/shared-types/src/character.ts";
 
 /**
  * Deterministic Median-Cut Color Quantization algorithm.

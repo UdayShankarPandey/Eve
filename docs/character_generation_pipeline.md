@@ -1,23 +1,23 @@
 # PixelPal — Controlled AI Character Generation Pipeline
 
-**Version:** 1.1.0<br/>
-**Scope:** Sprint 6 Phase 4 (Deterministic Pixel-Art Processing & Sprite Foundation)<br/>
-**Upstream Checkpoint:** `d5e8703` (Sprint 6 Phase 3: Controlled AI Character Generation)
+**Version:** 1.2.0<br/>
+**Scope:** Sprint 6 Phase 5 (Character Profile & Asset Identity Foundation)<br/>
+**Upstream Checkpoint:** `120138c` (Sprint 6 Phase 4: Deterministic Pixel-Art Processing)
 
 ---
 
 ## 1. Executive Summary & Objective
 
-PixelPal allows users to create personalized pixel-art companions from their own photographs. In Sprint 6 Phase 1, an impermeable upload boundary was established to validate raw bytes, magic signatures, headers, and dimensions. In Sprint 6 Phase 2, a deterministic preprocessing engine was introduced to decode rasters safely, normalize EXIF orientation, crop to a 1:1 framing, normalize dimensions to 512×512, strip camera/GPS metadata, and provide safe intermediate temporary storage. In Sprint 6 Phase 3, a controlled AI character generation engine was established behind a vendor-neutral provider abstraction using `gpt-image-2.5-sunburst` to create 1024×1024 character base images.
+PixelPal allows users to create personalized pixel-art companions from their own photographs. In Sprint 6 Phase 1, an impermeable upload boundary was established to validate raw bytes, magic signatures, headers, and dimensions. In Sprint 6 Phase 2, a deterministic preprocessing engine was introduced to decode rasters safely, normalize EXIF orientation, crop to a 1:1 framing, normalize dimensions to 512×512, strip camera/GPS metadata, and provide safe intermediate temporary storage. In Sprint 6 Phase 3, a controlled AI character generation engine was established behind a vendor-neutral provider abstraction using `gpt-image-2.5-sunburst` to create 1024×1024 character base images. In Sprint 6 Phase 4, a deterministic pixel-art processor was added to downscale images using nearest-neighbor semantics to 64×64, enforce binary alpha thresholding, and apply Median-Cut color quantization to 16 opaque colors.
 
-Sprint 6 Phase 4 builds strictly on top of Phase 3 by introducing the **Deterministic Pixel-Art Processing & Sprite Foundation**. Phase 4 performs:
-1. **Validated Source Reference Ingestion**: Ingests Phase 3 generated images strictly by `generatedStorageId`, rejecting arbitrary filesystem paths and traversal attempts.
-2. **Nearest-Neighbor Aspect-Preserving Downscaling**: Resamples images to the canonical 64×64 sprite canvas (or optional 128×128) using nearest-neighbor semantics (`sharp.kernel.nearest`), preventing interpolation blur.
-3. **Alpha Segregation & Binary Thresholding**: Decouples alpha from opaque color quantization, enforcing a clean binary alpha threshold (`alphaThreshold: 128`) that preserves transparent backgrounds without black/white matting or translucent halos.
-4. **Deterministic Median-Cut Quantization**: Clusters opaque pixels into a bounded palette (default 16 colors, configurable 2–256) with deterministic channel tie-breaking. Dithering is disabled by default for maximum crispness.
-5. **Privacy & Metadata Stripping**: Strips all EXIF, GPS, IPTC, and XMP metadata during encoding, producing a clean RGBA PNG sprite.
-6. **Application-Owned Sprite Storage**: Stages sprite assets in `pixelpal_sprites/` with collision-resistant unique identifiers (`sprite_char_<timestamp>_<randomHex>.png`), POSIX `0o600` permissions, traversal defense, and automatic cleanup.
-7. **Strict Determinism**: Guarantees identical pixel buffers and SHA-256 checksums for identical input bytes and options across runs.
+Sprint 6 Phase 5 concludes the Sprint 6 character generation epic by introducing the **Character Profile & Asset Identity Foundation**. Phase 5 performs:
+1. **Canonical Character ID Generation**: Creates collision-resistant, cryptographically strong unique identifiers (`character_<timestamp>_<randomHex>`) validated via strict regex.
+2. **Canonical Profile Schema**: Establishes a strongly typed, versioned domain contract (`CharacterProfile`, `schemaVersion: 1`) binding together asset references, style options, clothing configuration, and quantized palette data.
+3. **Asset Provenance & Non-Duplication**: Links to Phase 3 generated images (`generated_char_*`) and Phase 4 pixel sprites (`sprite_char_*`) by ID without duplicating raw image bytes or filesystem paths.
+4. **Controlled Clothing Configuration**: Records structured attire selections using closed enums (category, top, bottom, footwear, accessories, color theme), strictly eliminating prompt injection vulnerabilities.
+5. **Discrete Palette Representation**: Captures the actual extracted RGB palette colors, atmospheric mood, maximum opaque color count, and alpha threshold.
+6. **Safe Atomic Persistence**: Persists profiles as JSON documents in application-controlled storage (`pixelpal_profiles/`) with atomic write patterns (`.tmp` write followed by rename), POSIX `0o600` permissions, and traversal defense.
+7. **Strict Immutability**: Enforces that `characterId` and `createdAt` can never be mutated, and ensures that profile operations never overwrite or delete underlying Phase 3 and Phase 4 image assets.
 
 ---
 
@@ -60,7 +60,7 @@ Output Image Validation (Raster Decode, Dimension Verification, Strip Metadata)
       ▼
 Generated Intermediate PNG (`generated_char_<id>.png` in `pixelpal_generated/`)
 
-Phase 4 (This Phase — Deterministic Pixel-Art Processing):
+Phase 4 (Completed):
 Generated Intermediate PNG Reference
       │
       ▼
@@ -81,15 +81,27 @@ Metadata-Free PNG Encoding & SHA-256 Digest
       ▼
 Sprite-Ready PNG (`sprite_char_<id>.png` in `pixelpal_sprites/`)
 
-Phase 5 (Future Scope):
-Sprite-Ready PNG ──► CharacterProfile & SQLite Persistence
+Phase 5 (This Phase — Character Profile & Identity Foundation):
+Generated Asset Reference (`generated_char_<id>`) + Sprite Asset Reference (`sprite_char_<id>`)
+      │
+      ▼
+Asset Integrity & Storage Namespace Validation
+      │
+      ▼
+Closed-Union Style, Clothing & Quantized Palette Ingestion
+      │
+      ▼
+Canonical CharacterProfile Construction (`character_<id>`, schemaVersion: 1)
+      │
+      ▼
+Atomic File-Based Local Persistence (`pixelpal_profiles/<id>.json`)
 ```
 
 > [!IMPORTANT]
 > **Production Runtime Separation**:
-> - **Headless Capability**: Phase 4 is implemented as a headless Node-side domain capability and test suite.
+> - **Headless Capability**: Phase 5 is implemented as a headless Node-side domain capability and test suite.
 > - **Deferred Integration**: There is currently NO production desktop UI, NO Tauri IPC command, and NO background Node daemon/sidecar. Frontend UI integration and production IPC wiring are intentionally deferred to subsequent integration sprints.
-> - **Browser Bundle Isolation**: Sharp and Node filesystem utilities remain strictly host Node modules and are never imported by protected frontend files (`App.tsx`, `App.css`, `index.css`, `main.tsx`, `components/*`). Client bundling (`tsc && vite build`) remains completely free of native image processing code.
+> - **Zero Database / Zero Native Bloat**: Profile persistence uses lightweight, atomic file-based JSON storage, avoiding premature SQLite or external database dependencies at this stage. Client bundling (`tsc && vite build`) remains completely unaffected.
 
 ---
 
@@ -270,3 +282,73 @@ Phase 4 ingests validated Phase 3 generated images (`generated_char_<timestamp>_
 - **Phase 4 (Pixel Process)**: Converts the high-resolution illustration into a deterministic, quantized, nearest-neighbor 64×64 sprite asset.
 - **Phase 5 (Profile & Persistence)**: Links the sprite asset to a `CharacterProfile`, SQLite storage, and animation state machine.
 - *Note*: Phase 4 produces the base sprite asset; it does not generate multi-frame animation sheets.
+
+---
+
+## 9. Canonical Character Profile & Asset Identity Foundation (Phase 5)
+
+### 9.1. Architectural Scope & Invariants
+Phase 5 establishes the canonical identity and persistence layer for PixelPal companions.
+- **Metadata and Provenance Only**: The `CharacterProfile` links to Phase 3 generated images and Phase 4 pixel sprites strictly by storage ID. It contains zero raw image bytes and zero base64 buffers.
+- **Underlying Asset Immutability**: Profile creation, update, and deletion operations never modify, overwrite, or delete underlying Phase 1–4 image files.
+- **Portability & Privacy**: Zero device paths, zero personal GPS/EXIF data, and zero API keys are stored in the profile document.
+
+### 9.2. Stable Character ID Specification
+- **Format**: `character_<timestamp>_<randomHex>`
+- **Validation**: Strict regex `/^character_\d+_[a-f0-9]{8,32}$/`
+- **Collision Resistance**: Cryptographically strong random entropy (minimum 64-bit entropy via `crypto.getRandomValues`).
+- **Path Traversal Defense**: Rejects directory separators (`/`, `\`), path traversal tokens (`..`), and URI schemes (`:`).
+
+### 9.3. Profile Schema & Versioning
+- **Explicit Version**: `schemaVersion: 1` enforced at runtime. Unsupported future versions are rejected without silent corruption.
+- **Immutable Fields**: `characterId` and `createdAt` are strictly read-only after creation. Updates mutate only `updatedAt`, `style`, `clothing`, `palette`, `assets`, or `metadata`.
+
+### 9.4. Controlled Clothing Configuration
+Attire selections are strictly constrained to closed enums to prevent prompt injection and schema drift:
+- **`category`**: `"casual"` | `"formal"` | `"fantasy"` | `"cyberpunk"` | `"streetwear"` | `"athletic"` | `"cozy"` | `"traditional"` | `"uniform"` | `"vintage"`
+- **`top`**: `"t-shirt"` | `"hoodie"` | `"jacket"` | `"sweater"` | `"dress-shirt"` | `"blazer"` | `"tank-top"` | `"tunic"` | `"vest"` | `"robe"` | `"none"`
+- **`bottom`**: `"jeans"` | `"cargo-pants"` | `"slacks"` | `"shorts"` | `"skirt"` | `"sweatpants"` | `"leggings"` | `"overalls"` | `"robe"` | `"none"`
+- **`footwear`**: `"sneakers"` | `"boots"` | `"dress-shoes"` | `"sandals"` | `"slippers"` | `"loafers"` | `"barefoot"`
+- **`accessories`**: Optional array from closed set (`"glasses"`, `"headphones"`, `"backpack"`, `"hat"`, `"scarf"`, etc.)
+- **`colorTheme`**: `"monochrome"` | `"cool-slate"` | `"warm-autumn"` | `"vibrant-primary"` | `"pastel-soft"` | `"earth-tone"` | `"neon-cyber"` | `"midnight-navy"` | `"forest-green"` | `"crimson-ruby"`
+
+### 9.5. Structured Palette Configuration
+Directly captures the discrete quantized palette produced in Phase 4:
+- **`mood`**: Reused from Phase 3/4 (`"original-fidelity"`, `"vibrant"`, `"pastel"`, `"warm"`, `"cool"`).
+- **`maxOpaqueColors`**: Integer between 2 and 256 (default 16).
+- **`colors`**: Array of distinct `{ r, g, b }` color values extracted from the quantized sprite.
+- **`transparencyPolicy`**: `"binary-threshold"` | `"preserved"`.
+- **`alphaThreshold`**: Integer between 0 and 255 (default 128).
+
+### 9.6. Safe Atomic Persistence Model
+- **Storage Directory**: Application-controlled directory `pixelpal_profiles/` (`os.tmpdir() / "pixelpal_profiles"`). Mode `0o700`.
+- **File Naming**: `${characterId}.json` with POSIX mode `0o600` (owner read/write only).
+- **Atomic Write Pattern**:
+  1. Profile is validated against `validateProfile()`.
+  2. JSON is serialized and written to temporary file `${characterId}.tmp.<randomHex>`.
+  3. Atomic file rename moves the temp file to `${characterId}.json`.
+  4. On failure, temporary files are immediately cleaned up, preventing partially written or corrupted profiles.
+- **Schema Validation on Read**: Every profile loaded from disk is validated against the active schema before being returned.
+
+### 9.7. Structured Error Taxonomy
+| Error Code | Meaning |
+| :--- | :--- |
+| `CHARACTER_PROFILE_INVALID` | Profile payload or field structure fails validation |
+| `CHARACTER_ID_INVALID` | Malformed character ID, path traversal attempt, or invalid format |
+| `CHARACTER_SCHEMA_UNSUPPORTED` | Profile schema version not supported (requires version 1) |
+| `CHARACTER_ASSET_MISSING` | Referenced Phase 3 generated asset or Phase 4 sprite asset not found in storage |
+| `CHARACTER_ASSET_INVALID` | Asset reference ID format invalid or storage namespace mismatch |
+| `CHARACTER_STYLE_INVALID` | Style option contains invalid or unapproved enum value |
+| `CHARACTER_CLOTHING_INVALID` | Clothing option contains invalid category, top, bottom, or footwear enum |
+| `CHARACTER_PALETTE_INVALID` | Palette configuration has invalid color count, threshold, or RGB values |
+| `CHARACTER_PROFILE_NOT_FOUND` | Profile ID not found during get, update, or delete operations |
+| `CHARACTER_PROFILE_STORAGE_FAILED` | File system I/O error or collision on creation |
+| `CHARACTER_PROFILE_DELETE_FAILED` | File system deletion failure |
+
+### 9.8. Sprint 6 Complete Retrospective
+With Phase 5 complete, the entire 5-phase character generation pipeline is functional, headless, deterministic, and fully covered by hermetic tests:
+1. **Phase 1 (Upload)**: Anti-spoofing signature validation and safe staging.
+2. **Phase 2 (Preprocess)**: 512×512 normalization, EXIF orientation correction, local background removal.
+3. **Phase 3 (Generate)**: Controlled prompt synthesis and `gpt-image-2.5-sunburst` reference editing.
+4. **Phase 4 (Pixel Process)**: Nearest-neighbor 64×64 downscaling, binary alpha cutoff, 16-color Median-Cut quantization.
+5. **Phase 5 (Profile)**: Canonical identity, asset binding, structured clothing/palette models, and atomic persistence.

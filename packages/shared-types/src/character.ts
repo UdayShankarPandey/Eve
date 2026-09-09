@@ -584,3 +584,278 @@ export interface PixelProcessFailureResult {
 export type PixelProcessResult =
   | PixelProcessSuccessResult
   | PixelProcessFailureResult;
+
+/**
+ * Basic 8-bit RGB color representation.
+ */
+export interface RgbColor {
+  readonly r: number;
+  readonly g: number;
+  readonly b: number;
+}
+
+/**
+ * Broad stylistic classification for character attire.
+ */
+export type ClothingCategory =
+  | "casual"
+  | "formal"
+  | "fantasy"
+  | "cyberpunk"
+  | "streetwear"
+  | "athletic"
+  | "cozy"
+  | "traditional"
+  | "uniform"
+  | "vintage";
+
+/**
+ * Upper body garment type.
+ */
+export type ClothingTop =
+  | "t-shirt"
+  | "hoodie"
+  | "jacket"
+  | "sweater"
+  | "dress-shirt"
+  | "blazer"
+  | "tank-top"
+  | "tunic"
+  | "vest"
+  | "robe"
+  | "none";
+
+/**
+ * Lower body garment type.
+ */
+export type ClothingBottom =
+  | "jeans"
+  | "cargo-pants"
+  | "slacks"
+  | "shorts"
+  | "skirt"
+  | "sweatpants"
+  | "leggings"
+  | "overalls"
+  | "robe"
+  | "none";
+
+/**
+ * Footwear classification.
+ */
+export type ClothingFootwear =
+  | "sneakers"
+  | "boots"
+  | "dress-shoes"
+  | "sandals"
+  | "slippers"
+  | "loafers"
+  | "barefoot";
+
+/**
+ * Optional decorative accessories.
+ */
+export type ClothingAccessory =
+  | "glasses"
+  | "sunglasses"
+  | "hat"
+  | "cap"
+  | "beanie"
+  | "headband"
+  | "scarf"
+  | "backpack"
+  | "headphones"
+  | "belt"
+  | "watch"
+  | "bow"
+  | "cape"
+  | "mask"
+  | "none";
+
+/**
+ * Harmonious color theme applied to character clothing.
+ */
+export type ClothingColorTheme =
+  | "monochrome"
+  | "cool-slate"
+  | "warm-autumn"
+  | "vibrant-primary"
+  | "pastel-soft"
+  | "earth-tone"
+  | "neon-cyber"
+  | "midnight-navy"
+  | "forest-green"
+  | "crimson-ruby";
+
+/**
+ * Controlled, strongly typed clothing configuration for a companion character.
+ * Prevents arbitrary prompt injection by constraining selections to closed unions.
+ */
+export interface ClothingConfiguration {
+  /** High-level fashion aesthetic */
+  readonly category: ClothingCategory;
+  /** Upper body garment */
+  readonly top: ClothingTop;
+  /** Lower body garment */
+  readonly bottom: ClothingBottom;
+  /** Footwear choice */
+  readonly footwear: ClothingFootwear;
+  /** Optional accessories */
+  readonly accessories?: readonly ClothingAccessory[];
+  /** Primary color palette harmony */
+  readonly colorTheme: ClothingColorTheme;
+}
+
+/**
+ * Transparency preservation policy for character palette.
+ */
+export type TransparencyPolicy = "binary-threshold" | "preserved";
+
+/**
+ * Structured palette configuration representing the discrete color quantization of a character.
+ */
+export interface PaletteConfiguration {
+  /** Atmospheric palette mood reused from Phase 3/4 */
+  readonly mood: PaletteMood;
+  /** Maximum opaque color budget configured for quantization */
+  readonly maxOpaqueColors: number;
+  /** Actual distinct RGB colors extracted from the quantized sprite asset */
+  readonly colors: readonly RgbColor[];
+  /** Alpha handling policy enforced during quantization */
+  readonly transparencyPolicy: TransparencyPolicy;
+  /** Binary alpha cutoff threshold used (0-255, typically 128) */
+  readonly alphaThreshold: number;
+}
+
+/**
+ * Strong references to asset IDs produced across the character pipeline.
+ * Raw filesystem paths are strictly excluded to preserve portability and prevent path traversal.
+ */
+export interface CharacterProfileAssetReferences {
+  /** Storage ID of the Phase 3 AI-generated base character asset (generated_char_<timestamp>_<hex>) */
+  readonly generatedCharacterId: string;
+  /** Storage ID of the Phase 4 deterministic pixel sprite asset (sprite_char_<timestamp>_<hex>) */
+  readonly spriteId: string;
+  /** Optional reference to the Phase 2 preprocessed image ID (processed_char_<timestamp>_<hex>) */
+  readonly processedImageId?: string;
+  /** Optional reference to the original Phase 1 upload storage ID (char_upload_<timestamp>_<hex>) */
+  readonly sourceUploadId?: string;
+}
+
+/**
+ * Optional companion identity and tag metadata.
+ */
+export interface CharacterProfileMetadata {
+  /** Optional companion display name */
+  readonly displayName?: string;
+  /** Optional user or creator tag */
+  readonly tag?: string;
+}
+
+/**
+ * Canonical CharacterProfile domain model.
+ * Represents the complete, persistent identity of a personalized PixelPal companion.
+ */
+export interface CharacterProfile {
+  /** Canonical, stable, collision-resistant identifier (character_<timestamp>_<hex>) */
+  readonly characterId: string;
+  /** Explicit schema version (currently 1) */
+  readonly schemaVersion: 1;
+  /** Creation timestamp (milliseconds since epoch, immutable) */
+  readonly createdAt: number;
+  /** Last update timestamp (milliseconds since epoch) */
+  readonly updatedAt: number;
+  /** Pipeline asset references */
+  readonly assets: CharacterProfileAssetReferences;
+  /** Character style options (reused from Phase 3) */
+  readonly style: CharacterStyleOptions;
+  /** Controlled clothing configuration */
+  readonly clothing: ClothingConfiguration;
+  /** Discrete quantized palette configuration */
+  readonly palette: PaletteConfiguration;
+  /** Optional metadata */
+  readonly metadata?: CharacterProfileMetadata;
+}
+
+/**
+ * Request payload for creating a new CharacterProfile.
+ */
+export interface CreateProfileRequest {
+  /** Optional pre-generated character ID (must match canonical format if supplied) */
+  readonly characterId?: string;
+  /** Required pipeline asset references */
+  readonly assets: CharacterProfileAssetReferences;
+  /** Required character style options */
+  readonly style: CharacterStyleOptions;
+  /** Required clothing configuration */
+  readonly clothing: ClothingConfiguration;
+  /** Required quantized palette configuration */
+  readonly palette: PaletteConfiguration;
+  /** Optional metadata */
+  readonly metadata?: CharacterProfileMetadata;
+}
+
+/**
+ * Request payload for updating an existing CharacterProfile.
+ * characterId and createdAt are strictly immutable.
+ */
+export interface UpdateProfileRequest {
+  /** Modifiable style options */
+  readonly style?: CharacterStyleOptions;
+  /** Modifiable clothing configuration */
+  readonly clothing?: ClothingConfiguration;
+  /** Modifiable palette configuration */
+  readonly palette?: PaletteConfiguration;
+  /** Modifiable asset references (e.g. upon sprite re-quantization or regeneration) */
+  readonly assets?: Partial<CharacterProfileAssetReferences>;
+  /** Modifiable metadata */
+  readonly metadata?: CharacterProfileMetadata;
+}
+
+/**
+ * Structured error codes for character profile operations.
+ */
+export type CharacterProfileErrorCode =
+  | "CHARACTER_PROFILE_INVALID"
+  | "CHARACTER_ID_INVALID"
+  | "CHARACTER_SCHEMA_UNSUPPORTED"
+  | "CHARACTER_ASSET_MISSING"
+  | "CHARACTER_ASSET_INVALID"
+  | "CHARACTER_STYLE_INVALID"
+  | "CHARACTER_CLOTHING_INVALID"
+  | "CHARACTER_PALETTE_INVALID"
+  | "CHARACTER_PROFILE_NOT_FOUND"
+  | "CHARACTER_PROFILE_STORAGE_FAILED"
+  | "CHARACTER_PROFILE_DELETE_FAILED";
+
+/**
+ * Structured error details for character profile failures.
+ */
+export interface CharacterProfileError {
+  readonly code: CharacterProfileErrorCode;
+  readonly message: string;
+  readonly details?: Record<string, unknown>;
+}
+
+/**
+ * Successful profile operation result.
+ */
+export interface ProfileSuccessResult<T> {
+  readonly success: true;
+  readonly data: T;
+}
+
+/**
+ * Failed profile operation result.
+ */
+export interface ProfileFailureResult {
+  readonly success: false;
+  readonly error: CharacterProfileError;
+}
+
+/**
+ * Complete result union for profile operations.
+ */
+export type ProfileOperationResult<T> =
+  | ProfileSuccessResult<T>
+  | ProfileFailureResult;

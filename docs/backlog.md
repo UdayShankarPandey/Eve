@@ -18,6 +18,7 @@
 - [x] Character Image Preprocessing Foundation (Sprint 6 Phase 2)
 - [x] Controlled AI Character Generation Foundation (Sprint 6 Phase 3)
 - [x] Pixel-art conversion pipeline (Sprint 6 Phase 4)
+- [x] Character Profile & Asset Identity Foundation (Sprint 6 Phase 5)
 - [ ] Photo upload UI
 - [ ] Render base character sprite in React
 - [ ] Implement sprite animation engine (idle, happy, sad, worried, sleepy, surprised)

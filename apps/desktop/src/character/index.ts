@@ -19,3 +19,6 @@ export * from "./generator.ts";
 export * from "./sprite_storage.ts";
 export * from "./color_quantizer.ts";
 export * from "./pixel_processor.ts";
+export * from "./profile_validator.ts";
+export * from "./profile_storage.ts";
+export * from "./profile_manager.ts";
