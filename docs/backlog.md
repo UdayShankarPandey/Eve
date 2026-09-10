@@ -21,13 +21,14 @@
 - [x] Character Profile & Asset Identity Foundation (Sprint 6 Phase 5)
 - [x] Character Expressions & Asset System (Sprint 7: Phases 1–4)
 - [x] Personality Engine Foundation (Sprint 8: Profiles, Templates, Behavior, AI Boundary)
+- [x] AI Conversation Foundation (Sprint 9: Conversation, Context, LLM, Character Response, Fallback)
 - [ ] Photo upload UI
 - [ ] Render base character sprite in React
 - [ ] Implement sprite animation engine (idle, happy, sad, worried, sleepy, surprised)
 - [ ] Implement clickable character interactions
 - [ ] Implement speech bubble UI component
 - [ ] Connect basic personality/dialogue mapping
-- [ ] Basic LLM chat integration (opt-in)
+- [x] Basic LLM chat integration (opt-in)
 
 ## P2 — Strong Enhancement (Expanded Events & Reactions)
 - [ ] File system monitoring (user-selected paths only)

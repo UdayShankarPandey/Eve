@@ -524,3 +524,51 @@ Changing personality never alters the character's immutable identity or regenera
 ### 11.6. Durable Persistence
 - Persisted in `<appDataDir>/personality.json` using atomic write patterns (`.tmp` write followed by rename) with mode `0o600`.
 - Corrupt or missing configuration safely recovers to `DEFAULT_PERSONALITY_CONFIG` without crashing.
+
+---
+
+## 12. Sprint 9 — AI Conversation & Controlled Context Boundary
+
+Sprint 9 achieves the roadmap goal: *"Allow users to talk naturally with PixelPal while keeping desktop context controlled."*
+
+```text
+User Message (Max 500 chars)
+        │
+        ▼
+ConversationManager (Validates input, appends to bounded history)
+        │
+        ▼
+ConversationContextManager (Strict Allowlist Filter)
+   ├── Allowed: battery %, charging, network, idle minutes, sanitized app name, max 3 recent event summaries
+   └── Blocked: window titles, keystrokes, clipboard, process memory, file contents, secrets
+        │
+        ▼
+ConversationInstructionBuilder (Injects active personality, rules, context, turn history)
+        │
+        ▼
+ConversationLlmProvider (OpenAI gpt-4o-mini with Structured Outputs: json_schema)
+        │  [Host-side only; zero API key exposure to renderer bundle]
+        ▼
+StructuredResponseValidator (Independent validation: replyText <= 280 chars, Sprint 7 expression, intensity)
+   ├── Success ──► ValidatedCharacterResponse (source: 'llm')
+   └── Failure / Timeout (3000ms) / Refusal ──► getLocalConversationFallback (source: 'fallback')
+        │
+        ▼
+Character Presentation (Companion speech bubble & expression animation)
+```
+
+### 12.1. Permitted vs. Forbidden Context
+- **Explicit Allowlist**: Current battery percentage, charging state, network connectivity, network category, idle duration in minutes, sanitized active application name (strictly NO window title), and a bounded window of at most 3 recent desktop event summaries.
+- **Strictly Forbidden**: Keystrokes, clipboard contents, passwords, browser contents, private window titles, full file contents, directory dumps, process memory, audio/camera, raw download payloads, authentication tokens, API keys, and arbitrary OS payloads.
+
+### 12.2. Bounded Conversation History
+- **Limits**: Maximum 20 turns (`MAX_CONVERSATION_MESSAGES`) and maximum 4000 total characters (`MAX_CONVERSATION_CHARACTERS`).
+- **Pruning**: Deterministic FIFO pruning preserving the latest user/assistant dialogue turn.
+- **Durable Persistence**: Persisted locally in `<appDataDir>/conversation_history.json` via atomic writes with mode `0o600`. Corrupted or missing files safely recover to an empty history.
+
+### 12.3. Host-Side Structured Output & Security Invariants
+- **API Model**: Official OpenAI Chat Completions targeting `gpt-4o-mini` with `response_format: { type: "json_schema", json_schema: CONVERSATION_RESPONSE_JSON_SCHEMA }`.
+- **Response Contract**: `{ replyText: string, expression: CharacterExpressionId, notificationIntensity: NotificationIntensity }`.
+- **No OS Actions**: The model cannot execute OS commands, shell scripts, touch files, launch applications, or invoke tools.
+- **Prompt Injection Defense**: User messages are demarcated in untrusted `user` roles; system instructions strictly bar overrides to security boundaries.
+- **Credential Quarantine**: `OPENAI_API_KEY` is read strictly on the host runtime. Normal automated test suites execute offline via `MockConversationLlmProvider`.
