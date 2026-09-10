@@ -181,6 +181,31 @@ fn emit_test_event(app: AppHandle, event: DesktopEvent) -> Result<(), String> {
         .map_err(|e| format!("Failed to emit event: {}", e))
 }
 
+/// Updates native detector configuration at runtime, immediately suppressing or activating detectors
+#[tauri::command]
+fn update_detector_config(
+    state: State<'_, EventEngineState>,
+    config: DetectorConfig,
+) -> Result<(), String> {
+    let engine = state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock event engine".to_string())?;
+    engine.update_config(config)
+}
+
+/// Retrieves the current native detector configuration
+#[tauri::command]
+fn get_detector_config(
+    state: State<'_, EventEngineState>,
+) -> Result<DetectorConfig, String> {
+    let engine = state
+        .0
+        .lock()
+        .map_err(|_| "Failed to lock event engine".to_string())?;
+    engine.get_config()
+}
+
 /// Setup the system tray
 fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let show_item = MenuItem::with_id(app, "show", "Show PixelPal", true, None::<&str>)?;
@@ -253,6 +278,8 @@ pub fn run() {
             stop_event_engine,
             get_event_engine_status,
             emit_test_event,
+            update_detector_config,
+            get_detector_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

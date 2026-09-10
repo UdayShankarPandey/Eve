@@ -572,3 +572,57 @@ Character Presentation (Companion speech bubble & expression animation)
 - **No OS Actions**: The model cannot execute OS commands, shell scripts, touch files, launch applications, or invoke tools.
 - **Prompt Injection Defense**: User messages are demarcated in untrusted `user` roles; system instructions strictly bar overrides to security boundaries.
 - **Credential Quarantine**: `OPENAI_API_KEY` is read strictly on the host runtime. Normal automated test suites execute offline via `MockConversationLlmProvider`.
+
+---
+
+## 13. Sprint 10 — Privacy, Permissions & Character Asset Deletion Lifecycle
+
+Sprint 10 fulfills the roadmap goal: *"Make desktop awareness understandable, controllable, and safe."*
+
+```text
+User / Settings UI
+        │
+        ▼
+PermissionManager (Authoritative Controller)
+   ├── Configuration (`<appDataDir>/permissions.json`, mode 0o600)
+   ├── Dynamic Sync ──► Tauri IPC `update_detector_config`
+   │                          │
+   │                          ▼
+   │                   NativeEventEngine (Rust)
+   │                      └── DetectorManager (Suppresses polling loops at source)
+   ├── Downstream ────► EventGate (Defense-in-depth before event dispatch)
+   └── AI Privacy ────► filterApprovedContext (Gated by AI_CONTEXT and category permissions)
+```
+
+### 13.1. Six Canonical Permissions
+1. **`SYSTEM`** (Default: `true`): Hardware state, battery/power transitions, network status, user idle and session lock/unlock.
+2. **`APPLICATIONS`** (Default: `true`): Foreground application open and close transitions (sanitized process name, zero window titles or keystrokes).
+3. **`FILES`** (Default: `true`, allowedPaths: `[]`): File creation, modification, deletion, and download completion strictly scoped to user-configured directories. File contents are never accessed.
+4. **`NOTIFICATIONS`** (Default: `true`): Controls companion notification presentation intent (speech bubble popups, sound/alert urgency, notification intensity). External OS notification content is never read.
+5. **`SCREEN_TIME`** (Default: `true`): Continuous active screen time threshold tracking and healthy break recommendations.
+6. **`AI_CONTEXT`** (Default: `false`): Governs whether desktop awareness telemetry can be packaged into the prompt context for companion AI chat.
+
+### 13.2. Clarification 1: NOTIFICATIONS Presentation Intent
+- **Controlled Capability**: The `NOTIFICATIONS` permission dictates companion notification presentation behavior. When disabled, companion speech bubble alerts are suppressed, event reaction dialogues are silenced or dropped, and AI conversation responses are forced to `quiet` intensity.
+- **Permanent Absence of External Notification Ingestion**: PixelPal has no notification listener, no accessibility hook, and reads zero OS notification content.
+
+### 13.3. Clarification 2: Proven Native Enforcement Path
+- **Runtime Flow**: `PermissionManager` updates trigger `mapPermissionConfigToDetectorConfig()` -> invoked via Tauri IPC `update_detector_config()` -> `NativeEventEngine.update_config()` -> updates `DetectorManager.config`.
+- **Suppression at Source**: In `DetectorManager.check_all()`, any detector whose flag is `false` is completely bypassed during polling. Zero events are collected from OS APIs, and zero IPC messages are generated under normal operation.
+- **Defense-in-Depth**: `EventGate` acts as a downstream safety net, filtering and recording drop counters if an out-of-order event arrives.
+
+### 13.4. Clarification 3: Character Deletion Safety & Owned Asset Integrity
+- **Strict Canonical Validation**: Deletion requests require a valid canonical ID format (`^character_\d+_[a-f0-9]{8,32}$`). Arbitrary paths, relative directories, or unformatted IDs are immediately rejected.
+- **Owned Asset Resolution**: The deletion engine reads `<appDataDir>/profiles/<characterId>.json` to locate provably owned assets in `profile.assets`:
+  - `generatedCharacterId` (`pixelpal_generated/`)
+  - `spriteId` (`pixelpal_sprites/`)
+- **Provable Deletion Guarantees**:
+  - Target character profile and owned assets are securely unlinked and deleted.
+  - Unrelated character profiles and assets are strictly preserved.
+  - External non-application files are preserved.
+  - Path traversal attempts (`..`, escaped slashes, symlink tricks) are safely detected and rejected without disk modification.
+
+### 13.5. Data Controls & Purging Guarantees
+- **`clearEventHistory()`**: Wipes in-memory rolling event logs on the `EventBus`.
+- **`deleteConversationHistory()`**: Wipes memory and removes `<appDataDir>/conversation_history.json`.
+- **`resetSettings()`**: Restores `PermissionConfig` and `PersonalityConfig` to factory defaults and persists atomically, while preserving character identity and generated assets.

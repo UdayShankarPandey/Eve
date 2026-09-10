@@ -11,7 +11,7 @@
 - [ ] Implement User Idle monitor (Windows)
 - [ ] Implement deterministic Reaction Engine & State Machine
 - [ ] Implement basic SQLite database schema
-- [ ] Implement basic privacy permissions manager (dummy UI to start)
+- [x] Privacy & Permission Enforcement Engine, Scoped File Monitoring, and Data Controls (Sprint 10)
 
 ## P1 — Core Value (Character & Interaction)
 - [x] Character Upload & Image Validation Foundation (Sprint 6 Phase 1)
@@ -31,7 +31,7 @@
 - [x] Basic LLM chat integration (opt-in)
 
 ## P2 — Strong Enhancement (Expanded Events & Reactions)
-- [ ] File system monitoring (user-selected paths only)
+- [x] File system monitoring (user-selected paths only, scoped path containment, no content access) (Sprint 10)
 - [ ] Download completion detection
 - [ ] Active application tracking
 - [ ] Network connectivity awareness

@@ -4,3 +4,4 @@ export * from "./reactions.ts";
 export * from "./character.ts";
 export * from "./personality.ts";
 export * from "./conversation.ts";
+export * from "./permissions.ts";

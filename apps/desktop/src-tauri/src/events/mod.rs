@@ -106,4 +106,54 @@ impl NativeEventEngine {
             total_events_emitted,
         }
     }
+
+    /// Updates detector configuration at runtime, immediately controlling active detectors
+    pub fn update_config(&self, config: DetectorConfig) -> Result<(), String> {
+        let mut mgr = self
+            .manager
+            .lock()
+            .map_err(|_| "Failed to lock detector manager".to_string())?;
+        mgr.update_config(config);
+        Ok(())
+    }
+
+    /// Returns the current detector configuration
+    pub fn get_config(&self) -> Result<DetectorConfig, String> {
+        let mgr = self
+            .manager
+            .lock()
+            .map_err(|_| "Failed to lock detector manager".to_string())?;
+        Ok(mgr.config.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_native_event_engine_runtime_config_update_and_suppression() {
+        let engine = NativeEventEngine::new(DetectorConfig::default());
+        let initial_config = engine.get_config().expect("Failed to get config");
+        assert!(initial_config.battery_enabled);
+        assert!(initial_config.filesystem_enabled);
+
+        // Update config to disable battery and filesystem
+        let mut updated = initial_config.clone();
+        updated.battery_enabled = false;
+        updated.filesystem_enabled = false;
+        engine.update_config(updated).expect("Failed to update config");
+
+        let current = engine.get_config().expect("Failed to get config");
+        assert!(!current.battery_enabled, "Battery detector must be disabled");
+        assert!(!current.filesystem_enabled, "Filesystem detector must be disabled");
+
+        // Verify that check_all on underlying manager emits no battery/fs events
+        let mut mgr = engine.manager.lock().unwrap();
+        let events = mgr.check_all();
+        for ev in events {
+            assert_ne!(ev.source, "battery");
+            assert_ne!(ev.source, "filesystem");
+        }
+    }
 }

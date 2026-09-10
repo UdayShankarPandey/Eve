@@ -29,6 +29,7 @@ import { validateStructuredLlmResponse } from "./validator.ts";
 import { getLocalConversationFallback } from "./fallback.ts";
 import { InMemoryConversationStorageAdapter } from "./storage.ts";
 import { getPersonalityProfile } from "../personality/profiles.ts";
+import type { PermissionManager } from "../privacy/permission_manager.ts";
 
 /**
  * Options for configuring the ConversationManager.
@@ -37,6 +38,7 @@ export interface ConversationManagerOptions {
   storage?: ConversationStorageAdapter;
   provider?: ConversationLlmProvider;
   contextManager?: ConversationContextManager;
+  permissionManager?: PermissionManager;
   getPersonalityId?: () => PersonalityId;
 }
 
@@ -47,6 +49,7 @@ export class ConversationManager {
   private readonly storage: ConversationStorageAdapter;
   private readonly historyManager: ConversationHistoryManager;
   private readonly contextManager: ConversationContextManager;
+  private permissionManager?: PermissionManager;
   private provider?: ConversationLlmProvider;
   private readonly getPersonalityId: () => PersonalityId;
   private isInitialized = false;
@@ -55,6 +58,7 @@ export class ConversationManager {
     this.storage = options.storage || new InMemoryConversationStorageAdapter();
     this.historyManager = new ConversationHistoryManager();
     this.contextManager = options.contextManager || new ConversationContextManager();
+    this.permissionManager = options.permissionManager;
     this.provider = options.provider;
     this.getPersonalityId = options.getPersonalityId || (() => PersonalityIds.FRIENDLY);
   }
@@ -91,6 +95,20 @@ export class ConversationManager {
    */
   public setProvider(provider?: ConversationLlmProvider): void {
     this.provider = provider;
+  }
+
+  /**
+   * Sets or updates the active PermissionManager for AI context filtering.
+   */
+  public setPermissionManager(pm?: PermissionManager): void {
+    this.permissionManager = pm;
+  }
+
+  /**
+   * Returns the active PermissionManager if configured.
+   */
+  public getPermissionManager(): PermissionManager | undefined {
+    return this.permissionManager;
   }
 
   /**
@@ -155,7 +173,10 @@ export class ConversationManager {
     }
 
     // 4. Build approved context and history snapshot
-    const approvedContext = this.contextManager.buildApprovedContext();
+    let approvedContext = this.contextManager.buildApprovedContext();
+    if (this.permissionManager) {
+      approvedContext = this.permissionManager.filterAiContext(approvedContext);
+    }
     const historySnapshot = this.historyManager.getMessages().slice(0, -1); // exclude current user message
 
     try {
@@ -174,14 +195,28 @@ export class ConversationManager {
       }
 
       // 7. Successful turn
-      const response = validation.data;
+      let response = validation.data;
+      if (this.permissionManager && !this.permissionManager.isNotificationPermitted()) {
+        response = {
+          ...response,
+          notificationIntensity: "quiet",
+        };
+      }
+
       this.historyManager.append("assistant", response.replyText, response.expressionId);
       await this.persistHistorySafely();
       return response;
     } catch (err) {
       // 8. Resilient in-character fallback on provider failure, timeout, or invalid output
       const reason = err instanceof Error ? err.message : String(err);
-      const fallback = getLocalConversationFallback(personalityContext.id, reason);
+      let fallback = getLocalConversationFallback(personalityContext.id, reason);
+      if (this.permissionManager && !this.permissionManager.isNotificationPermitted()) {
+        fallback = {
+          ...fallback,
+          notificationIntensity: "quiet",
+        };
+      }
+
       this.historyManager.append("assistant", fallback.replyText, fallback.expressionId);
       await this.persistHistorySafely();
       return fallback;
