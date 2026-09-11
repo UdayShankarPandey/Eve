@@ -1,4 +1,7 @@
-import type { DesktopEvent } from "../../../../packages/shared-types/src/events.ts";
+import {
+  EventTypes,
+  type DesktopEvent,
+} from "../../../../packages/shared-types/src/events.ts";
 import {
   ReactionPriority,
   type ActiveReactionState,
@@ -48,11 +51,18 @@ export class ReactionResolver {
     reaction: ReactionDefinition,
     activeReaction: ActiveReactionState
   ): ResolutionResult {
-    if (reaction.priority > activeReaction.reaction.priority) {
+    // Narrow power-domain recovery rule: CHARGING_STARTED recovers from BATTERY_CRITICAL
+    const isPowerRecovery =
+      activeReaction.reaction.eventType === EventTypes.BATTERY_CRITICAL &&
+      reaction.eventType === EventTypes.CHARGING_STARTED;
+
+    if (reaction.priority > activeReaction.reaction.priority || isPowerRecovery) {
       return {
         status: "RESOLVED",
         reaction,
-        reason: `High-priority reaction '${reaction.id}' (${reaction.priority}) interrupts active reaction '${activeReaction.reaction.id}' (${activeReaction.reaction.priority})`,
+        reason: isPowerRecovery
+          ? `Power recovery reaction '${reaction.id}' recovers from critical power state '${activeReaction.reaction.id}'`
+          : `High-priority reaction '${reaction.id}' (${reaction.priority}) interrupts active reaction '${activeReaction.reaction.id}' (${activeReaction.reaction.priority})`,
         activeReaction,
       };
     }
@@ -78,11 +88,18 @@ export class ReactionResolver {
       };
     }
 
-    if (reaction.priority >= activeReaction.reaction.priority) {
+    // Narrow power-domain recovery rule: CHARGING_STARTED recovers from BATTERY_CRITICAL
+    const isPowerRecovery =
+      activeReaction.reaction.eventType === EventTypes.BATTERY_CRITICAL &&
+      reaction.eventType === EventTypes.CHARGING_STARTED;
+
+    if (reaction.priority >= activeReaction.reaction.priority || isPowerRecovery) {
       return {
         status: "RESOLVED",
         reaction,
-        reason: `Reaction '${reaction.id}' (${reaction.priority}) transitions from active loop '${activeReaction.reaction.id}' (${activeReaction.reaction.priority})`,
+        reason: isPowerRecovery
+          ? `Power recovery reaction '${reaction.id}' recovers from critical power state '${activeReaction.reaction.id}'`
+          : `Reaction '${reaction.id}' (${reaction.priority}) transitions from active loop '${activeReaction.reaction.id}' (${activeReaction.reaction.priority})`,
         activeReaction,
       };
     }
@@ -119,9 +136,14 @@ export class ReactionResolver {
     }
 
     // 2. Check if the candidate reaction is currently on cooldown
-    // Critical priority reactions (>= CRITICAL / 100) bypass cooldown suppression
+    // Critical priority reactions (>= CRITICAL / 100) and power-recovery transitions bypass cooldown suppression
     const isCritical = reaction.priority >= ReactionPriority.CRITICAL;
-    if (!isCritical && this.cooldownManager.isOnCooldown(reaction.id, now)) {
+    const isPowerRecovery =
+      activeReaction?.reaction.eventType === EventTypes.BATTERY_CRITICAL &&
+      reaction.eventType === EventTypes.CHARGING_STARTED;
+    const bypassCooldown = isCritical || isPowerRecovery;
+
+    if (!bypassCooldown && this.cooldownManager.isOnCooldown(reaction.id, now)) {
       const remaining = this.cooldownManager.getRemainingCooldown(reaction.id, now);
       return {
         status: "SUPPRESSED_ON_COOLDOWN",

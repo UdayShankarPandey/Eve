@@ -59,6 +59,7 @@ export class AutonomousIdleScheduler {
   private isPaused = false;
   private isDisposed = false;
   private currentActiveAction: IdleAction | null = null;
+  private currentActionToken = 0;
 
   private readonly actionListeners: Set<IdleActionListener> = new Set();
   private unsubscribeManager: (() => void) | null = null;
@@ -98,8 +99,10 @@ export class AutonomousIdleScheduler {
   public stop(): void {
     this.isRunning = false;
     this.isPaused = false;
+    this.currentActionToken++;
     this.clearScheduledTimer();
     this.clearActionTimer();
+    this.currentActiveAction = null;
   }
 
   /**
@@ -107,7 +110,10 @@ export class AutonomousIdleScheduler {
    */
   public pause(): void {
     this.isPaused = true;
+    this.currentActionToken++;
     this.clearScheduledTimer();
+    this.clearActionTimer();
+    this.currentActiveAction = null;
   }
 
   /**
@@ -155,7 +161,8 @@ export class AutonomousIdleScheduler {
     const action = this.executeAction(selectedType);
 
     // Reschedule next action if scheduler is actively running
-    if (this.isRunning && !this.isPaused) {
+    // Note: For yawn, rescheduling happens on completion after restoring default animation
+    if (this.isRunning && !this.isPaused && action.type !== "yawn") {
       this.scheduleNext();
     }
 
@@ -237,14 +244,42 @@ export class AutonomousIdleScheduler {
     this.currentActiveAction = action;
     this.notifyAction(action);
 
-    // Clear active action record after its duration
+    // Clear active action record after its duration and restore default animation if needed
     this.clearActionTimer();
+    this.currentActionToken++;
+    const token = this.currentActionToken;
+
     this.actionTimerId = setTimeout(() => {
       this.actionTimerId = null;
+      if (token !== this.currentActionToken || this.isDisposed) {
+        return;
+      }
+
       if (this.currentActiveAction === action) {
         this.currentActiveAction = null;
       }
+
+      if (type === "yawn") {
+        // Only restore default animation if character is still displaying SLEEPY
+        // and has not been overwritten by a newer reaction
+        if (
+          !this.isDisposed &&
+          this.manager.getCurrentAnimation().id === AnimationIds.SLEEPY
+        ) {
+          const defaultAnimId = this.manager.getDefaultAnimationId();
+          this.manager.setAnimation(defaultAnimId);
+
+          // If scheduler is running and not paused, schedule next action
+          if (this.isRunning && !this.isPaused) {
+            this.scheduleNext();
+          }
+        }
+      }
     }, durationMs);
+
+    if (typeof (this.actionTimerId as any)?.unref === "function") {
+      (this.actionTimerId as any).unref();
+    }
 
     return action;
   }
@@ -266,12 +301,25 @@ export class AutonomousIdleScheduler {
         this.trigger();
       }
     }, interval);
+
+    if (typeof (this.timerId as any)?.unref === "function") {
+      (this.timerId as any).unref();
+    }
   }
 
   /**
    * Responds to manager animation changes to respect interruptibility.
    */
   private handleManagerAnimationChange(): void {
+    if (
+      this.currentActiveAction?.type === "yawn" &&
+      this.manager.getCurrentAnimation().id === AnimationIds.SLEEPY
+    ) {
+      // Yawn animation was initiated by this scheduler: clear scheduled interval timer while yawn plays
+      this.clearScheduledTimer();
+      return;
+    }
+
     if (!this.manager.isIdle() || this.manager.isOneShotActive()) {
       // Character is in a high-level emotion or one-shot reaction: pause autonomous triggers
       this.pause();

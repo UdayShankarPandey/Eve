@@ -290,4 +290,113 @@ describe("Phase 1: Reaction Resolver Tests", () => {
     const resLow2 = resolver.resolve(lowEvent);
     assert.strictEqual(resLow2.status, "SUPPRESSED_ON_COOLDOWN");
   });
+
+  test("10. REAC-01: BATTERY_CRITICAL is protected against unrelated lower-priority events, but CHARGING_STARTED recovers", () => {
+    let mockTime = 1000;
+    const resolver = new ReactionResolver({
+      timeProvider: () => mockTime,
+    });
+
+    const activeCriticalReaction: ActiveReactionState = {
+      reaction: resolver.getRegistry().getForEventType(EventTypes.BATTERY_CRITICAL)!, // Priority 100 (CRITICAL, loop)
+      event: {
+        id: "e_crit",
+        type: EventTypes.BATTERY_CRITICAL,
+        timestamp: 1000,
+        source: "battery",
+        payload: { percentage: 4 },
+      },
+      startedAt: 1000,
+      expiresAt: Infinity,
+    };
+
+    // 1. Unrelated LOW priority event (APP_OPENED, Priority 30) is suppressed
+    const appEvent: DesktopEvent = {
+      id: "e_app",
+      type: EventTypes.APP_OPENED,
+      timestamp: 2000,
+      source: "application",
+      payload: {},
+    };
+    const resApp = resolver.resolve(appEvent, activeCriticalReaction, 2000);
+    assert.strictEqual(resApp.status, "SUPPRESSED_BY_PRIORITY");
+
+    // 2. Unrelated NORMAL priority event (NETWORK_CONNECTED, Priority 50) is suppressed
+    const netEvent: DesktopEvent = {
+      id: "e_net",
+      type: EventTypes.NETWORK_CONNECTED,
+      timestamp: 2500,
+      source: "network",
+      payload: { is_connected: true },
+    };
+    const resNet = resolver.resolve(netEvent, activeCriticalReaction, 2500);
+    assert.strictEqual(resNet.status, "SUPPRESSED_BY_PRIORITY");
+
+    // 3. Unrelated HIGH priority event (BATTERY_LOW, Priority 80) is suppressed
+    const lowBatEvent: DesktopEvent = {
+      id: "e_low_bat",
+      type: EventTypes.BATTERY_LOW,
+      timestamp: 2800,
+      source: "battery",
+      payload: { percentage: 15 },
+    };
+    const resLowBat = resolver.resolve(lowBatEvent, activeCriticalReaction, 2800);
+    assert.strictEqual(resLowBat.status, "SUPPRESSED_BY_PRIORITY");
+
+    // 4. Power recovery event (CHARGING_STARTED, Priority 50) MUST RECOVER from BATTERY_CRITICAL
+    const chargeEvent: DesktopEvent = {
+      id: "e_charge",
+      type: EventTypes.CHARGING_STARTED,
+      timestamp: 3000,
+      source: "battery",
+      payload: { is_charging: true },
+    };
+    const resCharge = resolver.resolve(chargeEvent, activeCriticalReaction, 3000);
+    assert.strictEqual(resCharge.status, "RESOLVED");
+    assert.strictEqual(resCharge.reaction?.id, "react_charging_started");
+    assert.strictEqual(resCharge.reaction?.animationId, AnimationIds.HAPPY);
+    assert.ok(
+      resCharge.reason?.includes("Power recovery reaction"),
+      `Expected reason to indicate power recovery, got '${resCharge.reason}'`
+    );
+  });
+
+  test("11. REAC-01: CHARGING_STARTED recovers from BATTERY_CRITICAL even if CHARGING_STARTED was on cooldown", () => {
+    let mockTime = 1000;
+    const cooldownMgr = new CooldownManager(() => mockTime);
+    const resolver = new ReactionResolver({
+      cooldownManager: cooldownMgr,
+      timeProvider: () => mockTime,
+    });
+
+    // Arm cooldown on CHARGING_STARTED (30,000ms cooldown)
+    cooldownMgr.recordTrigger("react_charging_started", 30_000, mockTime);
+    assert.strictEqual(cooldownMgr.isOnCooldown("react_charging_started", 2000), true);
+
+    const activeCriticalReaction: ActiveReactionState = {
+      reaction: resolver.getRegistry().getForEventType(EventTypes.BATTERY_CRITICAL)!,
+      event: {
+        id: "e_crit",
+        type: EventTypes.BATTERY_CRITICAL,
+        timestamp: mockTime,
+        source: "battery",
+        payload: { percentage: 3 },
+      },
+      startedAt: mockTime,
+      expiresAt: Infinity,
+    };
+
+    const chargeEvent: DesktopEvent = {
+      id: "e_charge_recovery",
+      type: EventTypes.CHARGING_STARTED,
+      timestamp: 2000,
+      source: "battery",
+      payload: { is_charging: true },
+    };
+
+    // Power recovery must bypass cooldown when escaping BATTERY_CRITICAL
+    const result = resolver.resolve(chargeEvent, activeCriticalReaction, 2000);
+    assert.strictEqual(result.status, "RESOLVED");
+    assert.strictEqual(result.reaction?.id, "react_charging_started");
+  });
 });

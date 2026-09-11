@@ -38,7 +38,10 @@ import {
 import type { ProfileStorageAdapter } from "../character/profile_storage.ts";
 import type { GeneratedStorageAdapter } from "../character/generated_storage.ts";
 import type { SpriteStorageAdapter } from "../character/sprite_storage.ts";
-import { AnimationManager } from "../animation/index.ts";
+import {
+  AnimationManager,
+  AutonomousIdleScheduler,
+} from "../animation/index.ts";
 import {
   ReactionExecutor,
   ReactionResolver,
@@ -81,6 +84,8 @@ export interface RuntimeCoordinatorOptions {
   spriteStorage?: SpriteStorageAdapter;
   /** Optional custom animation manager */
   animationManager?: AnimationManager;
+  /** Optional custom autonomous idle scheduler */
+  idleScheduler?: AutonomousIdleScheduler;
   /** Optional custom reaction resolver */
   reactionResolver?: ReactionResolver;
   /** Optional custom reaction executor */
@@ -109,6 +114,7 @@ export class RuntimeCoordinator {
   private readonly dataControls: DataControlsManager;
   private readonly conversationManager: ConversationManager;
   private readonly animationManager: AnimationManager;
+  private readonly idleScheduler: AutonomousIdleScheduler;
   private readonly reactionResolver: ReactionResolver;
   private readonly reactionExecutor: ReactionExecutor;
 
@@ -159,11 +165,17 @@ export class RuntimeCoordinator {
       permissionManager: this.permissionManager,
     });
 
-    // 5. Instantiate AnimationManager and ReactionExecutor
+    // 5. Instantiate AnimationManager, AutonomousIdleScheduler, and ReactionExecutor
     this.animationManager =
       options.animationManager ??
       new AnimationManager({
         timingMode: typeof window !== "undefined" ? "raf" : "timer",
+      });
+
+    this.idleScheduler =
+      options.idleScheduler ??
+      new AutonomousIdleScheduler(this.animationManager, {
+        autoStart: false,
       });
 
     this.reactionResolver =
@@ -175,6 +187,7 @@ export class RuntimeCoordinator {
       new ReactionExecutor({
         resolver: this.reactionResolver,
         animationManager: this.animationManager,
+        idleScheduler: this.idleScheduler,
         eventBus: this.eventBus,
         autoStart: false,
       });
@@ -232,6 +245,9 @@ export class RuntimeCoordinator {
 
         // Start ReactionExecutor so events reaching EventBus execute reactions
         this.reactionExecutor.start();
+
+        // Start AutonomousIdleScheduler for ambient idle micro-behaviors
+        this.idleScheduler.start();
 
         // Start listening to Tauri desktop events
         if (this.autoStartEventListener) {
@@ -382,6 +398,10 @@ export class RuntimeCoordinator {
     return this.animationManager;
   }
 
+  public getIdleScheduler(): AutonomousIdleScheduler {
+    return this.idleScheduler;
+  }
+
   public getReactionExecutor(): ReactionExecutor {
     return this.reactionExecutor;
   }
@@ -437,6 +457,11 @@ export class RuntimeCoordinator {
     if (this.unsubscribePermissionListener) {
       this.unsubscribePermissionListener();
       this.unsubscribePermissionListener = undefined;
+    }
+    try {
+      this.idleScheduler.destroy();
+    } catch (err) {
+      console.error("[RuntimeCoordinator] Error destroying AutonomousIdleScheduler:", err);
     }
     try {
       this.reactionExecutor.destroy();

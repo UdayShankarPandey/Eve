@@ -329,4 +329,74 @@ describe("Sprint 11 Phase 4: Runtime Lifecycle & Resilience", () => {
     assert.equal(idleScheduler.isActive(), false);
     assert.equal(animManager.isPlaying(), false);
   });
+
+  test("11. WIRE-01: RuntimeCoordinator creates and manages single AutonomousIdleScheduler using production AnimationManager", async () => {
+    const coordinator = new RuntimeCoordinator({
+      permissionStorage: new InMemoryPermissionStorageAdapter(),
+      invokeFn: async () => ({}),
+      autoStartEventListener: false,
+    });
+
+    const scheduler = coordinator.getIdleScheduler();
+    assert.ok(scheduler instanceof AutonomousIdleScheduler, "Coordinator must instantiate AutonomousIdleScheduler");
+    assert.strictEqual(coordinator.getIdleScheduler(), scheduler, "getIdleScheduler must return the same instance");
+    assert.strictEqual(scheduler.isActive(), false, "Scheduler must not start before runtime initialization");
+
+    // Initialize runtime
+    await coordinator.init();
+
+    assert.strictEqual(scheduler.isActive(), true, "Scheduler must start upon successful runtime init");
+
+    // Idempotent init does not create duplicate scheduler
+    await coordinator.init();
+    assert.strictEqual(coordinator.getIdleScheduler(), scheduler);
+    assert.strictEqual(scheduler.isActive(), true);
+
+    // Destroy coordinator cleans up scheduler
+    coordinator.destroy();
+    assert.strictEqual(scheduler.isActive(), false, "Scheduler must be stopped on coordinator destroy");
+    assert.throws(() => scheduler.start(), /Instance is destroyed/);
+  });
+
+  test("12. WIRE-01: Real reactions take precedence over AutonomousIdleScheduler and scheduler resumes upon reaction completion", async () => {
+    const coordinator = new RuntimeCoordinator({
+      permissionStorage: new InMemoryPermissionStorageAdapter(),
+      invokeFn: async () => ({}),
+      autoStartEventListener: false,
+    });
+
+    await coordinator.init();
+
+    const scheduler = coordinator.getIdleScheduler();
+    const executor = coordinator.getReactionExecutor();
+    const animMgr = coordinator.getAnimationManager();
+
+    assert.strictEqual(scheduler.isActive(), true, "Scheduler is active in idle state");
+
+    // Ingest a high-priority event (BATTERY_LOW)
+    const permitted = coordinator.handleIncomingNativeEvent({
+      id: "evt_bat_low",
+      type: EventTypes.BATTERY_LOW,
+      timestamp: Date.now(),
+      source: "battery",
+      payload: { percentage: 10 },
+    });
+
+    assert.strictEqual(permitted, true);
+    assert.strictEqual(executor.isReactionActive(), true, "Reaction must be actively running");
+    assert.strictEqual(animMgr.getCurrentAnimation().id, "worried");
+
+    // Idle scheduler must be stopped while real reaction is active
+    assert.strictEqual(scheduler.isActive(), false, "Idle scheduler must be suppressed during active reaction");
+
+    // Complete reaction -> character returns to default animation and resumes idle scheduler
+    executor.completeReaction();
+
+    assert.strictEqual(executor.isReactionActive(), false);
+    assert.strictEqual(animMgr.isIdle(), true);
+    assert.strictEqual(scheduler.isActive(), true, "Idle scheduler must resume after reaction completes");
+
+    coordinator.destroy();
+    assert.strictEqual(scheduler.isActive(), false);
+  });
 });

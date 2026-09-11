@@ -153,4 +153,81 @@ describe("Phase 2: Reaction Lifecycle & End-to-End Pipeline Tests", () => {
     executor.destroy();
     eventBus.destroy();
   });
+
+  test("5. REAC-01 End-to-End: BATTERY_CRITICAL plays SAD loop, CHARGING_STARTED recovers to HAPPY, then completes to default IDLE", () => {
+    let mockTime = 1000;
+    const eventBus = new EventBus();
+    const resolver = new ReactionResolver({ timeProvider: () => mockTime });
+    const animMgr = new MockAnimationManager();
+
+    const executor = new ReactionExecutor({
+      resolver,
+      animationManager: animMgr,
+      eventBus,
+      timeProvider: () => mockTime,
+      autoStart: true,
+    });
+
+    assert.strictEqual(animMgr.currentAnim, AnimationIds.IDLE);
+
+    // 1. BATTERY_CRITICAL triggers critical loop (SAD)
+    eventBus.publish({
+      id: "evt_crit",
+      type: EventTypes.BATTERY_CRITICAL,
+      timestamp: mockTime,
+      source: "battery",
+      payload: { percentage: 4 },
+    });
+
+    assert.strictEqual(animMgr.currentAnim, AnimationIds.SAD);
+    assert.strictEqual(executor.isReactionActive(), true);
+    assert.strictEqual(executor.getActiveReaction()?.reaction.id, "react_battery_critical");
+
+    // 2. Unrelated events (APP_OPENED) cannot interrupt
+    mockTime = 2000;
+    eventBus.publish({
+      id: "evt_app",
+      type: EventTypes.APP_OPENED,
+      timestamp: mockTime,
+      source: "application",
+      payload: {},
+    });
+
+    assert.strictEqual(animMgr.currentAnim, AnimationIds.SAD, "APP_OPENED must not interrupt BATTERY_CRITICAL");
+    assert.strictEqual(executor.getActiveReaction()?.reaction.id, "react_battery_critical");
+
+    // 3. Power recovery event (CHARGING_STARTED) recovers the character!
+    mockTime = 3000;
+    eventBus.publish({
+      id: "evt_charging",
+      type: EventTypes.CHARGING_STARTED,
+      timestamp: mockTime,
+      source: "battery",
+      payload: { is_charging: true },
+    });
+
+    assert.strictEqual(animMgr.currentAnim, AnimationIds.HAPPY, "CHARGING_STARTED must transition character to HAPPY");
+    assert.strictEqual(executor.getActiveReaction()?.reaction.id, "react_charging_started");
+
+    // 4. Reaction completion returns character to default animation (IDLE)
+    executor.completeReaction();
+    assert.strictEqual(animMgr.currentAnim, AnimationIds.IDLE, "Reaction completion must restore default IDLE animation");
+    assert.strictEqual(executor.isReactionActive(), false);
+
+    // 5. Battery becoming critical again later triggers SAD again
+    mockTime = 100_000;
+    eventBus.publish({
+      id: "evt_crit_2",
+      type: EventTypes.BATTERY_CRITICAL,
+      timestamp: mockTime,
+      source: "battery",
+      payload: { percentage: 2 },
+    });
+
+    assert.strictEqual(animMgr.currentAnim, AnimationIds.SAD);
+    assert.strictEqual(executor.getActiveReaction()?.reaction.id, "react_battery_critical");
+
+    executor.destroy();
+    eventBus.destroy();
+  });
 });

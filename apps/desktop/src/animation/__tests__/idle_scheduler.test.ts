@@ -1,4 +1,4 @@
-import test, { describe } from "node:test";
+import test, { describe, mock } from "node:test";
 import assert from "node:assert";
 import {
   AnimationManager,
@@ -98,21 +98,36 @@ describe("Phase 2: Autonomous Idle Scheduler Tests", () => {
     manager.destroy();
   });
 
-  test("5. Yawn action triggers transition to sleepy and returns to idle", () => {
-    const manager = new AnimationManager({ timingMode: "manual" });
-    const scheduler = new AutonomousIdleScheduler(manager);
+  test("5. IDLE-01: Yawn action triggers SLEEPY, automatically restores configured default animation after 1200ms, and resumes", () => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      const manager = new AnimationManager({ timingMode: "manual" });
+      const scheduler = new AutonomousIdleScheduler(manager);
 
-    assert.strictEqual(manager.isIdle(), true);
+      scheduler.start();
+      assert.strictEqual(manager.isIdle(), true);
 
-    scheduler.trigger("yawn");
-    assert.strictEqual(manager.getCurrentAnimation().id, AnimationIds.SLEEPY);
+      // Trigger yawn -> character enters SLEEPY
+      scheduler.trigger("yawn");
+      assert.strictEqual(manager.getCurrentAnimation().id, AnimationIds.SLEEPY);
+      assert.strictEqual(scheduler.getCurrentAction()?.type, "yawn");
 
-    // Manager can return to idle
-    manager.setAnimation(AnimationIds.IDLE);
-    assert.strictEqual(manager.isIdle(), true);
+      // Advance 1200ms duration
+      mock.timers.tick(1200);
 
-    scheduler.destroy();
-    manager.destroy();
+      // Character must automatically restore configured default animation (IDLE)
+      assert.strictEqual(manager.getCurrentAnimation().id, manager.getDefaultAnimationId());
+      assert.strictEqual(manager.isIdle(), true);
+      assert.strictEqual(scheduler.getCurrentAction(), null);
+
+      // Scheduler must resume and schedule future autonomous actions
+      assert.strictEqual(scheduler.isScheduled(), true);
+
+      scheduler.destroy();
+      manager.destroy();
+    } finally {
+      mock.timers.reset();
+    }
   });
 
   test("6. Interruptibility: Idle triggers are rejected when character is in a non-idle state", () => {
@@ -161,5 +176,104 @@ describe("Phase 2: Autonomous Idle Scheduler Tests", () => {
     }, /Instance is destroyed/);
 
     manager.destroy();
+  });
+
+  test("8. IDLE-01 Stale callback protection: Newer reaction during yawn is NOT overwritten by expired yawn timer", () => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      const manager = new AnimationManager({ timingMode: "manual" });
+      const scheduler = new AutonomousIdleScheduler(manager);
+
+      scheduler.start();
+      scheduler.trigger("yawn");
+      assert.strictEqual(manager.getCurrentAnimation().id, AnimationIds.SLEEPY);
+
+      // Advance 400ms into the yawn
+      mock.timers.tick(400);
+
+      // An incoming reaction (e.g. BATTERY_LOW -> WORRIED) takes over animation
+      manager.setAnimation(AnimationIds.WORRIED);
+      assert.strictEqual(manager.getCurrentAnimation().id, AnimationIds.WORRIED);
+
+      // Advance remaining 800ms so the original yawn timer expires
+      mock.timers.tick(800);
+
+      // The stale yawn timer MUST NOT overwrite the active reaction with default idle
+      assert.strictEqual(
+        manager.getCurrentAnimation().id,
+        AnimationIds.WORRIED,
+        "Stale yawn callback must not overwrite active reaction animation"
+      );
+
+      scheduler.destroy();
+      manager.destroy();
+    } finally {
+      mock.timers.reset();
+    }
+  });
+
+  test("9. IDLE-01: pause(), stop(), and destroy() prevent yawn completion side effects", () => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      const manager = new AnimationManager({ timingMode: "manual" });
+
+      // Case A: pause() cancels yawn side effects
+      const schedulerA = new AutonomousIdleScheduler(manager);
+      schedulerA.start();
+      schedulerA.trigger("yawn");
+      assert.strictEqual(manager.getCurrentAnimation().id, AnimationIds.SLEEPY);
+      schedulerA.pause();
+      assert.strictEqual(schedulerA.getCurrentAction(), null);
+      mock.timers.tick(1200);
+      assert.strictEqual(schedulerA.isActive(), false);
+      schedulerA.destroy();
+
+      // Case B: stop() cancels yawn side effects
+      manager.setAnimation(AnimationIds.IDLE);
+      const schedulerB = new AutonomousIdleScheduler(manager);
+      schedulerB.start();
+      schedulerB.trigger("yawn");
+      schedulerB.stop();
+      assert.strictEqual(schedulerB.getCurrentAction(), null);
+      mock.timers.tick(1200);
+      assert.strictEqual(schedulerB.isActive(), false);
+      schedulerB.destroy();
+
+      // Case C: destroy() cleans up active yawn timer
+      manager.setAnimation(AnimationIds.IDLE);
+      const schedulerC = new AutonomousIdleScheduler(manager);
+      schedulerC.start();
+      schedulerC.trigger("yawn");
+      schedulerC.destroy();
+      mock.timers.tick(1200);
+      assert.strictEqual(schedulerC.isActive(), false);
+
+      manager.destroy();
+    } finally {
+      mock.timers.reset();
+    }
+  });
+
+  test("10. IDLE-01: Repeated yawn cycles do not accumulate timers and consistently restore default animation", () => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      const manager = new AnimationManager({ timingMode: "manual" });
+      const scheduler = new AutonomousIdleScheduler(manager);
+      scheduler.start();
+
+      for (let i = 0; i < 5; i++) {
+        scheduler.trigger("yawn");
+        assert.strictEqual(manager.getCurrentAnimation().id, AnimationIds.SLEEPY);
+
+        mock.timers.tick(1200);
+        assert.strictEqual(manager.getCurrentAnimation().id, AnimationIds.IDLE);
+        assert.strictEqual(scheduler.getCurrentAction(), null);
+      }
+
+      scheduler.destroy();
+      manager.destroy();
+    } finally {
+      mock.timers.reset();
+    }
   });
 });
