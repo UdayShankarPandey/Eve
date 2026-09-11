@@ -16,7 +16,11 @@ import {
   type FilesPermissionScope,
   PermissionIds,
 } from "./types.ts";
-import { isPathAllowed, resolveAuthorizedDownloadsDir } from "./file_scope.ts";
+import {
+  isPathAllowed,
+  resolveAuthorizedDownloadsDir,
+  FileScopeValidator,
+} from "./file_scope.ts";
 import type { EventBus } from "../events/event_bus.ts";
 
 /**
@@ -62,7 +66,8 @@ export function getRequiredPermissionForEvent(eventType: EventType): PermissionI
  */
 export function isEventPermitted(
   event: DesktopEvent<any>,
-  config: PermissionConfig
+  config: PermissionConfig,
+  validator?: FileScopeValidator
 ): boolean {
   if (!event || !event.type) {
     return false;
@@ -98,7 +103,11 @@ export function isEventPermitted(
           ? payload.download_dir
           : undefined;
 
-    if (!filePath || !isPathAllowed(filePath, allowedPaths)) {
+    const permitted = validator
+      ? validator.isPathAllowed(filePath)
+      : isPathAllowed(filePath, allowedPaths);
+
+    if (!filePath || !permitted) {
       return false; // File is outside allowed scope
     }
   }
@@ -113,16 +122,28 @@ export function isEventPermitted(
 export class EventGate {
   private config: PermissionConfig;
   private droppedEventsCount = 0;
+  private readonly fileScopeValidator: FileScopeValidator;
 
   constructor(initialConfig: PermissionConfig) {
     this.config = initialConfig;
+    const allowedPaths = (initialConfig.permissions[PermissionIds.FILES]?.scope as FilesPermissionScope | undefined)?.allowedPaths ?? [];
+    this.fileScopeValidator = new FileScopeValidator(allowedPaths);
   }
 
   /**
-   * Updates the active permission configuration used for gating.
+   * Updates the active permission configuration used for gating and updates canonical roots snapshot.
    */
   public updateConfig(newConfig: PermissionConfig): void {
     this.config = newConfig;
+    const allowedPaths = (newConfig.permissions[PermissionIds.FILES]?.scope as FilesPermissionScope | undefined)?.allowedPaths ?? [];
+    this.fileScopeValidator.updateRoots(allowedPaths);
+  }
+
+  /**
+   * Returns the underlying FileScopeValidator instance.
+   */
+  public getFileScopeValidator(): FileScopeValidator {
+    return this.fileScopeValidator;
   }
 
   /**
@@ -133,7 +154,7 @@ export class EventGate {
     bus: EventBus,
     event: DesktopEvent<T>
   ): boolean {
-    if (isEventPermitted(event, this.config)) {
+    if (isEventPermitted(event, this.config, this.fileScopeValidator)) {
       bus.publish(event);
       return true;
     } else {

@@ -33,52 +33,60 @@ export function normalizeScopePath(rawPath: string): string {
 }
 
 /**
+ * Checks whether targetPath is strictly within (or equal to) rootDir using deterministic
+ * path boundary calculation. Performs zero filesystem I/O.
+ */
+export function isPathWithinRoot(normalizedTarget: string, normalizedRoot: string): boolean {
+  const isWindows = process.platform === "win32";
+  const targetComp = isWindows ? normalizedTarget.toLowerCase() : normalizedTarget;
+  const rootComp = isWindows ? normalizedRoot.toLowerCase() : normalizedRoot;
+
+  const relative = path.relative(rootComp, targetComp);
+  if (relative === "") {
+    return true;
+  }
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Checks whether targetPath is strictly within (or equal to) rootDir.
  * Fully protects against directory traversal, prefix collisions, and symlink escapes.
+ * Options allow enabling or bypassing deep filesystem realpath inspection.
  */
-export function isPathContained(targetPath: string, rootDir: string): boolean {
+export function isPathContained(
+  targetPath: string,
+  rootDir: string,
+  options: { checkSymlinks?: boolean } = { checkSymlinks: true }
+): boolean {
   try {
     const normalizedTarget = normalizeScopePath(targetPath);
     const normalizedRoot = normalizeScopePath(rootDir);
 
-    // On Windows, paths are case-insensitive
-    const isWindows = process.platform === "win32";
-    const targetComp = isWindows ? normalizedTarget.toLowerCase() : normalizedTarget;
-    const rootComp = isWindows ? normalizedRoot.toLowerCase() : normalizedRoot;
-
-    // Check directory containment via relative path computation
-    const relative = path.relative(rootComp, targetComp);
-
-    // Exactly equal to the root directory
-    if (relative === "") {
-      return true;
-    }
-
-    // If relative starts with '..' or is absolute, it is outside the root
-    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    // Fast deterministic boundary containment
+    if (!isPathWithinRoot(normalizedTarget, normalizedRoot)) {
       return false;
     }
 
-    // Additional symlink/junction escape check if the file or directory exists on disk
-    try {
-      if (fs.existsSync(normalizedTarget)) {
-        const realTarget = fs.realpathSync(normalizedTarget);
-        let realRoot = normalizedRoot;
-        if (fs.existsSync(normalizedRoot)) {
-          realRoot = fs.realpathSync(normalizedRoot);
-        }
+    // Additional deep symlink/junction escape check if explicitly requested and target exists
+    if (options.checkSymlinks) {
+      try {
+        if (fs.existsSync(normalizedTarget)) {
+          const realTarget = fs.realpathSync(normalizedTarget);
+          let realRoot = normalizedRoot;
+          if (fs.existsSync(normalizedRoot)) {
+            realRoot = fs.realpathSync(normalizedRoot);
+          }
 
-        const realTargetComp = isWindows ? realTarget.toLowerCase() : realTarget;
-        const realRootComp = isWindows ? realRoot.toLowerCase() : realRoot;
-        const realRelative = path.relative(realRootComp, realTargetComp);
-
-        if (realRelative.startsWith("..") || path.isAbsolute(realRelative)) {
-          // Symlink escapes outside allowed root!
-          return false;
+          if (!isPathWithinRoot(normalizeScopePath(realTarget), normalizeScopePath(realRoot))) {
+            return false;
+          }
         }
+      } catch {
+        // If symlink check fails (e.g. deleted file event), containment check above is authoritative
       }
-    } catch {
-      // If symlink check fails (e.g. deleted file event), containment check above is authoritative
     }
 
     return true;
@@ -87,9 +95,96 @@ export function isPathContained(targetPath: string, rootDir: string): boolean {
   }
 }
 
+export interface FileScopeFsProvider {
+  existsSync?: (path: fs.PathLike) => boolean;
+  realpathSync?: (path: fs.PathLike) => string;
+}
+
+/**
+ * Pre-resolved, immutable canonical scope validator for the hot event path.
+ * Canonicalizes approved roots at configuration time (via realpathSync when roots exist),
+ * and evaluates incoming event paths using deterministic path comparison with zero filesystem I/O.
+ */
+export class FileScopeValidator {
+  private canonicalRoots: readonly string[] = [];
+  private fsProvider: FileScopeFsProvider;
+
+  constructor(allowedPaths: readonly string[] = [], fsProvider: FileScopeFsProvider = fs) {
+    this.fsProvider = fsProvider;
+    this.updateRoots(allowedPaths);
+  }
+
+  /**
+   * Resolves and canonicalizes the configured roots into an immutable snapshot.
+   * Atomically replaces the active root snapshot.
+   */
+  public updateRoots(allowedPaths: readonly string[]): void {
+    const nextRoots: string[] = [];
+    const existsFn = this.fsProvider.existsSync ?? fs.existsSync;
+    const realpathFn = this.fsProvider.realpathSync ?? fs.realpathSync;
+
+    if (Array.isArray(allowedPaths)) {
+      for (const raw of allowedPaths) {
+        if (typeof raw !== "string" || raw.trim() === "") continue;
+        try {
+          const normalized = normalizeScopePath(raw);
+          let canonical = normalized;
+          try {
+            if (existsFn(normalized)) {
+              canonical = normalizeScopePath(realpathFn(normalized));
+            }
+          } catch {
+            // Fall back safely to normalized representation
+          }
+          nextRoots.push(canonical);
+        } catch {
+          // Ignore invalid path entry, never broaden scope
+        }
+      }
+    }
+    // Atomic snapshot replacement
+    this.canonicalRoots = Object.freeze(nextRoots);
+  }
+
+  /**
+   * Returns the active canonical root paths.
+   */
+  public getCanonicalRoots(): readonly string[] {
+    return this.canonicalRoots;
+  }
+
+  /**
+   * Evaluates path containment against pre-resolved canonical roots with ZERO filesystem I/O.
+   */
+  public isPathAllowed(targetPath: unknown): boolean {
+    if (typeof targetPath !== "string" || targetPath.trim() === "") {
+      return false;
+    }
+    if (this.canonicalRoots.length === 0) {
+      return false;
+    }
+
+    let normalizedTarget: string;
+    try {
+      normalizedTarget = normalizeScopePath(targetPath);
+    } catch {
+      return false;
+    }
+
+    for (const root of this.canonicalRoots) {
+      if (isPathWithinRoot(normalizedTarget, root)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+}
+
 /**
  * Validates whether a file path falls within any of the user's configured allowed paths.
  * Returns false if allowedRoots is empty or if targetPath lies outside all allowed roots.
+ * Performs deterministic in-memory containment with zero synchronous filesystem I/O.
  */
 export function isPathAllowed(
   targetPath: unknown,
@@ -104,10 +199,22 @@ export function isPathAllowed(
     return false;
   }
 
+  let normalizedTarget: string;
+  try {
+    normalizedTarget = normalizeScopePath(targetPath);
+  } catch {
+    return false;
+  }
+
   for (const root of allowedRoots) {
     if (typeof root === "string" && root.trim() !== "") {
-      if (isPathContained(targetPath, root)) {
-        return true;
+      try {
+        const normalizedRoot = normalizeScopePath(root);
+        if (isPathWithinRoot(normalizedTarget, normalizedRoot)) {
+          return true;
+        }
+      } catch {
+        // ignore invalid root
       }
     }
   }

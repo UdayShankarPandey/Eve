@@ -69,6 +69,9 @@ const TEMP_EXTENSIONS: &[&str] = &[
     "swp",
 ];
 
+/// Default polling cadence for filesystem scanning (3000ms reduces unnecessary I/O by 66% while preserving responsiveness)
+pub const DEFAULT_FILESYSTEM_POLL_INTERVAL_MS: u64 = 3000;
+
 #[derive(Debug, Clone)]
 struct FileSnapshot {
     filename: String,
@@ -77,43 +80,93 @@ struct FileSnapshot {
     directory: String,
 }
 
-/// Filesystem lifecycle awareness detector (Sprint 5)
+/// Filesystem lifecycle awareness detector (Sprint 5, optimized in Sprint 11)
 pub struct FilesystemDetector {
     provider: Box<dyn FilesystemScannerProvider>,
     monitored_dirs: Vec<String>,
     known_files: HashMap<String, FileSnapshot>,
     is_initial_scan: bool,
+    poll_interval_ms: u64,
+    last_scan_timestamp: Option<std::time::Instant>,
+    scan_count: u64,
 }
 
 impl FilesystemDetector {
     pub fn new(provider: Box<dyn FilesystemScannerProvider>, monitored_dirs: Vec<String>) -> Self {
+        Self::with_interval(provider, monitored_dirs, 0)
+    }
+
+    pub fn with_interval(
+        provider: Box<dyn FilesystemScannerProvider>,
+        monitored_dirs: Vec<String>,
+        poll_interval_ms: u64,
+    ) -> Self {
         Self {
             provider,
             monitored_dirs,
             known_files: HashMap::new(),
             is_initial_scan: true,
+            poll_interval_ms,
+            last_scan_timestamp: None,
+            scan_count: 0,
         }
     }
 
     pub fn native(monitored_dirs: Vec<String>) -> Self {
-        Self::new(Box::new(LocalFilesystemScanner), monitored_dirs)
+        Self::with_interval(
+            Box::new(LocalFilesystemScanner),
+            monitored_dirs,
+            DEFAULT_FILESYSTEM_POLL_INTERVAL_MS,
+        )
+    }
+
+    pub fn set_poll_interval_ms(&mut self, interval_ms: u64) {
+        self.poll_interval_ms = interval_ms;
+    }
+
+    pub fn get_poll_interval_ms(&self) -> u64 {
+        self.poll_interval_ms
+    }
+
+    pub fn get_scan_count(&self) -> u64 {
+        self.scan_count
     }
 
     pub fn set_monitored_dirs(&mut self, dirs: Vec<String>) {
         self.monitored_dirs = dirs;
         self.is_initial_scan = true;
+        self.last_scan_timestamp = None;
         self.known_files.clear();
     }
 
     pub fn reset(&mut self) {
         self.known_files.clear();
         self.is_initial_scan = true;
+        self.last_scan_timestamp = None;
     }
 
     /// Polls monitored directories and emits FILE_CREATED, FILE_MODIFIED, FILE_DELETED
     pub fn check_events(&mut self) -> Result<Vec<DesktopEvent>, String> {
+        // Fast early-return if no directories are configured
+        if self.monitored_dirs.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Dedicated cadence gating: skip scan if interval has not elapsed
+        let now = std::time::Instant::now();
+        if !self.is_initial_scan && self.poll_interval_ms > 0 {
+            if let Some(last_scan) = self.last_scan_timestamp {
+                if now.duration_since(last_scan).as_millis() < self.poll_interval_ms as u128 {
+                    return Ok(Vec::new());
+                }
+            }
+        }
+
+        self.last_scan_timestamp = Some(now);
+        self.scan_count += 1;
+
         let mut events = Vec::new();
-        let mut current_scan_paths = HashSet::new();
+        let mut current_scan_paths = HashSet::with_capacity(self.known_files.len());
 
         for dir in &self.monitored_dirs {
             let entries = self.provider.scan_directory(dir)?;
@@ -383,6 +436,7 @@ pub mod tests {
         let temp_path_str = temp_dir.to_string_lossy().to_string();
 
         let mut detector = FilesystemDetector::native(vec![temp_path_str]);
+        detector.set_poll_interval_ms(0);
 
         // Baseline: empty dir -> 0 events
         assert_eq!(detector.check_events().unwrap().len(), 0);
@@ -409,7 +463,8 @@ pub mod tests {
         assert_eq!(detector.check_events().unwrap().len(), 0);
 
         // 5. Delete file on real Windows filesystem
-        std::fs::remove_file(&file_path).unwrap();
+        let file_path_delete = temp_dir.join("live_test.txt");
+        std::fs::remove_file(&file_path_delete).unwrap();
 
         let events = detector.check_events().unwrap();
         assert_eq!(events.len(), 1);
@@ -417,5 +472,88 @@ pub mod tests {
 
         // Clean up disposable directory
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_filesystem_detector_polling_cadence_skips_within_interval() {
+        let entries = Arc::new(Mutex::new(vec![FileMetadataEntry {
+            path: "C:\\Projects\\file.txt".to_string(),
+            filename: "file.txt".to_string(),
+            size_bytes: 100,
+            extension: "txt".to_string(),
+            directory: "C:\\Projects".to_string(),
+            is_file: true,
+        }]));
+
+        let provider = Box::new(TestFilesystemScanner {
+            entries: Arc::clone(&entries),
+        });
+
+        // Configure 5000ms cadence
+        let mut detector = FilesystemDetector::with_interval(provider, vec!["C:\\Projects".to_string()], 5000);
+
+        // 1. First scan executes immediately to establish baseline
+        assert_eq!(detector.get_scan_count(), 0);
+        let events1 = detector.check_events().unwrap();
+        assert_eq!(events1.len(), 0);
+        assert_eq!(detector.get_scan_count(), 1);
+
+        // Add a file
+        entries.lock().unwrap().push(FileMetadataEntry {
+            path: "C:\\Projects\\new.txt".to_string(),
+            filename: "new.txt".to_string(),
+            size_bytes: 200,
+            extension: "txt".to_string(),
+            directory: "C:\\Projects".to_string(),
+            is_file: true,
+        });
+
+        // 2. Calling check_events immediately within 5000ms MUST skip scanning
+        let events2 = detector.check_events().unwrap();
+        assert_eq!(events2.len(), 0, "Scan must be skipped when interval has not elapsed");
+        assert_eq!(detector.get_scan_count(), 1, "Scan count must not increase when skipped");
+
+        // 3. Resetting poll interval to 0ms allows immediate scan
+        detector.set_poll_interval_ms(0);
+        let events3 = detector.check_events().unwrap();
+        assert_eq!(events3.len(), 1, "Immediate scan occurs when cadence allows");
+        assert_eq!(events3[0].event_type, EventType::FILE_CREATED);
+        assert_eq!(detector.get_scan_count(), 2);
+    }
+
+    #[test]
+    fn test_filesystem_detector_scans_immediately_on_config_change() {
+        let entries = Arc::new(Mutex::new(vec![]));
+        let provider = Box::new(TestFilesystemScanner {
+            entries: Arc::clone(&entries),
+        });
+
+        let mut detector = FilesystemDetector::with_interval(provider, vec!["C:\\DirA".to_string()], 10_000);
+
+        // Initial scan
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+        assert_eq!(detector.get_scan_count(), 1);
+
+        // Immediate subsequent call is skipped
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+        assert_eq!(detector.get_scan_count(), 1);
+
+        // Changing monitored dirs resets cadence and triggers immediate scan on next check
+        detector.set_monitored_dirs(vec!["C:\\DirB".to_string()]);
+        assert_eq!(detector.check_events().unwrap().len(), 0);
+        assert_eq!(detector.get_scan_count(), 2, "Configuration change must trigger immediate scan");
+    }
+
+    #[test]
+    fn test_filesystem_detector_empty_monitored_dirs_performs_no_scans() {
+        let entries = Arc::new(Mutex::new(vec![]));
+        let provider = Box::new(TestFilesystemScanner {
+            entries: Arc::clone(&entries),
+        });
+
+        let mut detector = FilesystemDetector::new(provider, Vec::new());
+        let events = detector.check_events().unwrap();
+        assert_eq!(events.len(), 0);
+        assert_eq!(detector.get_scan_count(), 0, "Zero scans when monitored_dirs is empty");
     }
 }

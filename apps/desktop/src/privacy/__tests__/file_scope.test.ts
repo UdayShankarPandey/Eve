@@ -15,6 +15,7 @@ import {
   isPathAllowed,
   getDefaultDownloadsPath,
   resolveAuthorizedDownloadsDir,
+  FileScopeValidator,
 } from "../file_scope.ts";
 
 describe("Category C: File Scope & Path Containment", () => {
@@ -172,6 +173,100 @@ describe("Category C: File Scope & Path Containment", () => {
     assert.equal(
       path.normalize(parentResult!),
       path.normalize(normalizeScopePath(canonical))
+    );
+  });
+
+  it("8. EVT-01: FileScopeValidator enforces containment, snapshot updates, and boundary rules", () => {
+    const rootA = path.join(tempBase, "project_a");
+    const rootB = path.join(tempBase, "project_b");
+    const siblingA = path.join(tempBase, "project_a_sibling");
+    fs.mkdirSync(rootA, { recursive: true });
+    fs.mkdirSync(rootB, { recursive: true });
+    fs.mkdirSync(siblingA, { recursive: true });
+
+    const validator = new FileScopeValidator([rootA]);
+
+    // 1. Accepts child path
+    const childFile = path.join(rootA, "src", "index.ts");
+    assert.equal(validator.isPathAllowed(childFile), true);
+
+    // 2. Accepts root directory itself
+    assert.equal(validator.isPathAllowed(rootA), true);
+
+    // 3. Rejects sibling directory with common prefix (/foo vs /foo-extra)
+    const siblingFile = path.join(siblingA, "leak.txt");
+    assert.equal(validator.isPathAllowed(siblingFile), false);
+
+    // 4. Rejects directory traversal (../ escape)
+    const traversal = path.join(rootA, "..", "secret.txt");
+    assert.equal(validator.isPathAllowed(traversal), false);
+
+    // 5. Rejects unrelated path
+    const unrelatedFile = path.join(rootB, "file.txt");
+    assert.equal(validator.isPathAllowed(unrelatedFile), false);
+
+    // 6. Multiple roots work
+    validator.updateRoots([rootA, rootB]);
+    assert.equal(validator.isPathAllowed(childFile), true);
+    assert.equal(validator.isPathAllowed(unrelatedFile), true);
+
+    // 7. Previously authorized path rejected after scope replacement
+    validator.updateRoots([rootB]);
+    assert.equal(validator.isPathAllowed(childFile), false, "Root A path must be rejected after replacement");
+    assert.equal(validator.isPathAllowed(unrelatedFile), true);
+
+    // 8. Empty roots reject all paths
+    validator.updateRoots([]);
+    assert.equal(validator.isPathAllowed(childFile), false);
+    assert.equal(validator.isPathAllowed(unrelatedFile), false);
+  });
+
+  it("9. EVT-01: FileScopeValidator performs ZERO synchronous filesystem I/O on the hot event path", () => {
+    const root = path.join(tempBase, "hotpath_dir");
+    fs.mkdirSync(root, { recursive: true });
+    const targetFile = path.join(root, "event.log");
+
+    let existsSyncCalls = 0;
+    let realpathSyncCalls = 0;
+
+    const spyFs = {
+      existsSync: (p: fs.PathLike) => {
+        existsSyncCalls++;
+        return fs.existsSync(p);
+      },
+      realpathSync: (p: fs.PathLike) => {
+        realpathSyncCalls++;
+        return fs.realpathSync(p);
+      },
+    };
+
+    // Configuration / updateRoots uses fsProvider
+    const validator = new FileScopeValidator([root], spyFs);
+    const configExistsCalls = existsSyncCalls;
+    const configRealpathCalls = realpathSyncCalls;
+
+    // Verify configuration did resolve root canonicalization
+    assert.ok(configExistsCalls > 0, "Configuration should verify root path");
+
+    // Reset counters before evaluating hot path
+    existsSyncCalls = 0;
+    realpathSyncCalls = 0;
+
+    // Simulate hot event path evaluating 100 incoming events
+    for (let i = 0; i < 100; i++) {
+      const allowed = validator.isPathAllowed(targetFile);
+      assert.equal(allowed, true);
+    }
+
+    assert.equal(
+      existsSyncCalls,
+      0,
+      "fs.existsSync must be called 0 times on the per-event hot path"
+    );
+    assert.equal(
+      realpathSyncCalls,
+      0,
+      "fs.realpathSync must be called 0 times on the per-event hot path"
     );
   });
 });

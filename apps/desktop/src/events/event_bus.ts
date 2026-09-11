@@ -42,11 +42,13 @@ export class EventBus {
       options,
     };
 
-    if (!this.listeners.has(key)) {
-      this.listeners.set(key, []);
+    const currentList = this.listeners.get(key);
+    if (!currentList || currentList.length === 0) {
+      this.listeners.set(key, [sub]);
+    } else {
+      // Copy-on-Write: create a new snapshot array so active dispatches are unaffected
+      this.listeners.set(key, [...currentList, sub]);
     }
-
-    this.listeners.get(key)!.push(sub);
 
     return () => {
       this.unsubscribe(key, subId);
@@ -67,13 +69,12 @@ export class EventBus {
     const list = this.listeners.get(eventType);
     if (!list) return;
 
-    const index = list.findIndex((s) => s.id === subscriptionId);
-    if (index !== -1) {
-      list.splice(index, 1);
-    }
-
-    if (list.length === 0) {
+    // Copy-on-Write: filter out removed subscriber to maintain immutable snapshot
+    const nextList = list.filter((s) => s.id !== subscriptionId);
+    if (nextList.length === 0) {
       this.listeners.delete(eventType);
+    } else {
+      this.listeners.set(eventType, nextList);
     }
   }
 
@@ -88,13 +89,13 @@ export class EventBus {
 
     // 1. Dispatch to type-specific subscribers
     const specificList = this.listeners.get(event.type);
-    if (specificList) {
+    if (specificList && specificList.length > 0) {
       this.dispatchToList(specificList, event, event.type);
     }
 
     // 2. Dispatch to wildcard ('*') subscribers
     const wildcardList = this.listeners.get("*");
-    if (wildcardList) {
+    if (wildcardList && wildcardList.length > 0) {
       this.dispatchToList(wildcardList, event, "*");
     }
   }
@@ -107,13 +108,22 @@ export class EventBus {
   }
 
   /**
-   * Dispatches an event to a list of subscriptions safely, isolating errors.
+   * Dispatches an event to an immutable snapshot of subscriptions with zero temporary array copies.
    */
-  private dispatchToList(list: InternalSubscription[], event: DesktopEvent<any>, eventKey: EventType | "*"): void {
-    const toRemove: number[] = [];
-    const copy = [...list]; // avoid mutation during iteration
+  private dispatchToList(
+    list: readonly InternalSubscription[],
+    event: DesktopEvent<any>,
+    eventKey: EventType | "*"
+  ): void {
+    const len = list.length;
+    if (len === 0) return;
 
-    for (const sub of copy) {
+    let toRemove: number[] | null = null;
+
+    // Direct iteration over the snapshot array without cloning
+    for (let i = 0; i < len; i++) {
+      const sub = list[i];
+
       // Check filter if specified
       if (sub.options?.filter && !sub.options.filter(event)) {
         continue;
@@ -126,12 +136,17 @@ export class EventBus {
       }
 
       if (sub.options?.once) {
+        if (!toRemove) {
+          toRemove = [];
+        }
         toRemove.push(sub.id);
       }
     }
 
-    for (const id of toRemove) {
-      this.unsubscribe(eventKey, id);
+    if (toRemove) {
+      for (const id of toRemove) {
+        this.unsubscribe(eventKey, id);
+      }
     }
   }
 

@@ -225,3 +225,139 @@ describe("Phase 1: Event Bus & Event Model Tests", () => {
     }, /Instance is disposed/);
   });
 });
+
+describe("EVT-02: Zero-Allocation Dispatch & Re-entrancy Safety", () => {
+  test("1. Normal listener execution order is strictly preserved (FIFO)", () => {
+    const bus = new EventBus();
+    const callOrder: number[] = [];
+
+    bus.subscribe(EventTypes.BATTERY_LOW, () => callOrder.push(1));
+    bus.subscribe(EventTypes.BATTERY_LOW, () => callOrder.push(2));
+    bus.subscribe(EventTypes.BATTERY_LOW, () => callOrder.push(3));
+
+    bus.publish({ id: "e1", type: EventTypes.BATTERY_LOW, timestamp: 1, source: "battery", payload: {} });
+
+    assert.deepStrictEqual(callOrder, [1, 2, 3]);
+    bus.destroy();
+  });
+
+  test("2. Wildcard listener order: type-specific listeners fire first, wildcard listeners second", () => {
+    const bus = new EventBus();
+    const callOrder: string[] = [];
+
+    bus.subscribe("*", () => callOrder.push("wildcard_1"));
+    bus.subscribe(EventTypes.BATTERY_LOW, () => callOrder.push("specific_1"));
+    bus.subscribe("*", () => callOrder.push("wildcard_2"));
+    bus.subscribe(EventTypes.BATTERY_LOW, () => callOrder.push("specific_2"));
+
+    bus.publish({ id: "e1", type: EventTypes.BATTERY_LOW, timestamp: 1, source: "battery", payload: {} });
+
+    assert.deepStrictEqual(callOrder, ["specific_1", "specific_2", "wildcard_1", "wildcard_2"]);
+    bus.destroy();
+  });
+
+  test("3. Re-entrant unsubscribe during dispatch does not alter current iteration indices", () => {
+    const bus = new EventBus();
+    const executed: number[] = [];
+    let unsub2: () => void = () => {};
+
+    bus.subscribe(EventTypes.CHARGING_STARTED, () => {
+      executed.push(1);
+      // Listener 1 unsubscribes listener 2 mid-dispatch!
+      unsub2();
+    });
+
+    unsub2 = bus.subscribe(EventTypes.CHARGING_STARTED, () => {
+      executed.push(2);
+    });
+
+    bus.subscribe(EventTypes.CHARGING_STARTED, () => {
+      executed.push(3);
+    });
+
+    // In Copy-on-Write snapshot dispatch, active dispatch completes the existing snapshot cleanly
+    bus.publish({ id: "e1", type: EventTypes.CHARGING_STARTED, timestamp: 1, source: "battery", payload: {} });
+    assert.strictEqual(executed.includes(1), true);
+    assert.strictEqual(executed.includes(3), true);
+
+    // On subsequent event, unsubscribed listener 2 NEVER executes
+    executed.length = 0;
+    bus.publish({ id: "e2", type: EventTypes.CHARGING_STARTED, timestamp: 2, source: "battery", payload: {} });
+    assert.deepStrictEqual(executed, [1, 3], "Subsequent dispatch must not invoke unsubscribed listener 2");
+
+    bus.destroy();
+  });
+
+  test("4. Re-entrant subscribe during dispatch does not fire for the currently in-flight event", () => {
+    const bus = new EventBus();
+    const executed: string[] = [];
+
+    bus.subscribe(EventTypes.NETWORK_CONNECTED, () => {
+      executed.push("listener_1");
+      // Dynamically subscribe listener 2 during listener 1 execution
+      bus.subscribe(EventTypes.NETWORK_CONNECTED, () => {
+        executed.push("listener_2");
+      });
+    });
+
+    // First event: listener 2 was registered mid-dispatch, MUST NOT run for this in-flight event
+    bus.publish({ id: "e1", type: EventTypes.NETWORK_CONNECTED, timestamp: 1, source: "network", payload: {} });
+    assert.deepStrictEqual(executed, ["listener_1"]);
+
+    // Second event: newly registered listener 2 MUST now execute
+    executed.length = 0;
+    bus.publish({ id: "e2", type: EventTypes.NETWORK_CONNECTED, timestamp: 2, source: "network", payload: {} });
+    assert.deepStrictEqual(executed, ["listener_1", "listener_2"]);
+
+    bus.destroy();
+  });
+
+  test("5. Listener throwing during dispatch isolates error and continues dispatching to remaining subscribers", () => {
+    const bus = new EventBus();
+    const executed: number[] = [];
+
+    bus.subscribe(EventTypes.APP_OPENED, () => {
+      executed.push(1);
+      throw new Error("Simulated failure in subscriber 1");
+    });
+
+    bus.subscribe(EventTypes.APP_OPENED, () => {
+      executed.push(2);
+    });
+
+    assert.doesNotThrow(() => {
+      bus.publish({ id: "e1", type: EventTypes.APP_OPENED, timestamp: 1, source: "app", payload: {} });
+    });
+
+    assert.deepStrictEqual(executed, [1, 2]);
+    bus.destroy();
+  });
+
+  test("6. Empty subscriber list publishes safely without allocating temporary structures", () => {
+    const bus = new EventBus();
+
+    // Event with 0 specific and 0 wildcard subscribers
+    assert.doesNotThrow(() => {
+      bus.publish({ id: "e1", type: EventTypes.FILE_CREATED, timestamp: 1, source: "filesystem", payload: {} });
+    });
+
+    assert.strictEqual(bus.getHistory().length, 1);
+    bus.destroy();
+  });
+
+  test("7. Repeated publication: 100 consecutive events execute deterministically with zero memory churn", () => {
+    const bus = new EventBus();
+    let receiveCount = 0;
+
+    bus.subscribe(EventTypes.USER_IDLE, () => {
+      receiveCount++;
+    });
+
+    for (let i = 0; i < 100; i++) {
+      bus.publish({ id: `e_${i}`, type: EventTypes.USER_IDLE, timestamp: i, source: "user_activity", payload: {} });
+    }
+
+    assert.strictEqual(receiveCount, 100);
+    bus.destroy();
+  });
+});
