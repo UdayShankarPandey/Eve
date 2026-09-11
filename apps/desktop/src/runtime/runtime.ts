@@ -90,6 +90,16 @@ export interface RuntimeCoordinatorOptions {
 }
 
 /**
+ * Authoritative runtime lifecycle states.
+ */
+export type RuntimeLifecycleState =
+  | "NEW"
+  | "INITIALIZING"
+  | "INITIALIZED"
+  | "DESTROYING"
+  | "DESTROYED";
+
+/**
  * Authoritative production coordinator managing all desktop runtime services.
  */
 export class RuntimeCoordinator {
@@ -106,7 +116,8 @@ export class RuntimeCoordinator {
   private readonly listenFn: ListenEventFn;
   private readonly autoStartEventListener: boolean;
 
-  private isInitialized = false;
+  private state: RuntimeLifecycleState = "NEW";
+  private initPromise: Promise<void> | null = null;
   private unlistenDesktopEvents?: () => void;
   private unsubscribePermissionListener?: () => void;
   private activeSyncPromise: Promise<void> | null = null;
@@ -178,65 +189,99 @@ export class RuntimeCoordinator {
   }
 
   /**
+   * Returns the current lifecycle state of the RuntimeCoordinator.
+   */
+  public getState(): RuntimeLifecycleState {
+    return this.state;
+  }
+
+  /**
    * Initializes all runtime services:
    * - Loads persisted permissions.json (or recovers to safe defaults)
    * - Syncs initial detector config to Rust
    * - Starts ReactionExecutor on eventBus
    * - Starts listening to Tauri "desktop-event" IPC channel
+   *
+   * Fully idempotent: multiple concurrent or sequential calls are safe.
+   * On any fatal initialization error, rolls back acquired resources and marks state DESTROYED.
    */
   public async init(): Promise<void> {
-    if (this.isInitialized) {
+    if (this.state === "INITIALIZED") {
       return;
     }
-
-    try {
-      // Load persisted permissions from disk
-      await this.permissionManager.init();
-
-      // Update EventGate with loaded configuration
-      const activeConfig = this.permissionManager.getConfig();
-      this.eventGate.updateConfig(activeConfig);
-
-      // Perform initial native detector synchronization to Rust
-      await this.syncNativeDetectors(activeConfig);
-
-      // Start ReactionExecutor so events reaching EventBus execute reactions
-      this.reactionExecutor.start();
-
-      // Start listening to Tauri desktop events
-      if (this.autoStartEventListener) {
-        await this.startEventListener();
-      }
-
-      this.isInitialized = true;
-    } catch (err) {
-      console.error("[RuntimeCoordinator] Error during runtime initialization:", err);
-      // Ensure manager remains ready in a safe state
-      this.isInitialized = true;
+    if (this.state === "INITIALIZING" && this.initPromise) {
+      return this.initPromise;
     }
+    if (this.state === "DESTROYING" || this.state === "DESTROYED") {
+      throw new Error("Cannot initialize a destroyed RuntimeCoordinator instance.");
+    }
+
+    this.state = "INITIALIZING";
+
+    this.initPromise = (async () => {
+      try {
+        // Load persisted permissions from disk
+        await this.permissionManager.init();
+
+        // Update EventGate with loaded configuration
+        const activeConfig = this.permissionManager.getConfig();
+        this.eventGate.updateConfig(activeConfig);
+
+        // Perform initial native detector synchronization to Rust
+        await this.syncNativeDetectors(activeConfig);
+
+        // Start ReactionExecutor so events reaching EventBus execute reactions
+        this.reactionExecutor.start();
+
+        // Start listening to Tauri desktop events
+        if (this.autoStartEventListener) {
+          await this.startEventListener();
+        }
+
+        // Guard against destroy() called while initialization was in progress
+        if (this.state === "DESTROYING" || this.state === "DESTROYED") {
+          this.cleanupInternalResources();
+          return;
+        }
+
+        this.state = "INITIALIZED";
+      } catch (err) {
+        this.cleanupInternalResources();
+        this.state = "DESTROYED";
+        throw err;
+      } finally {
+        this.initPromise = null;
+      }
+    })();
+
+    return this.initPromise;
   }
 
   /**
    * Returns whether the coordinator has completed initialization.
    */
   public isReady(): boolean {
-    return this.isInitialized;
+    return this.state === "INITIALIZED";
   }
 
   /**
    * Starts listening to native "desktop-event" emissions from Tauri.
    */
   public async startEventListener(): Promise<void> {
-    if (this.unlistenDesktopEvents) {
+    if (this.unlistenDesktopEvents || this.state === "DESTROYING" || this.state === "DESTROYED") {
       return;
     }
 
     try {
       this.unlistenDesktopEvents = await this.listenFn<DesktopEvent>("desktop-event", (eventPayload) => {
+        if (this.state !== "INITIALIZED") {
+          return; // Drop events safely if destroyed or destroying
+        }
         this.handleIncomingNativeEvent(eventPayload.payload);
       });
     } catch (err) {
       console.error("[RuntimeCoordinator] Could not attach Tauri 'desktop-event' listener:", err);
+      throw err;
     }
   }
 
@@ -275,6 +320,7 @@ export class RuntimeCoordinator {
       await this.invokeFn("update_detector_config", { config: nativeConfig });
     } catch (err) {
       console.error("[RuntimeCoordinator] update_detector_config IPC call failed:", err);
+      throw err;
     }
   }
 
@@ -372,16 +418,36 @@ export class RuntimeCoordinator {
   /**
    * Completely tears down the runtime coordinator, stops event listeners,
    * unsubscribes permission listeners, and destroys active reaction & animation loops.
+   * Safe and idempotent across multiple invocations.
    */
   public destroy(): void {
+    if (this.state === "DESTROYED" || this.state === "DESTROYING") {
+      return;
+    }
+    this.state = "DESTROYING";
+    this.cleanupInternalResources();
+    this.state = "DESTROYED";
+  }
+
+  /**
+   * Internal resource cleanup invoked on destroy() or partial initialization failure.
+   */
+  private cleanupInternalResources(): void {
     this.stopEventListener();
     if (this.unsubscribePermissionListener) {
       this.unsubscribePermissionListener();
       this.unsubscribePermissionListener = undefined;
     }
-    this.reactionExecutor.destroy();
-    this.animationManager.destroy();
-    this.isInitialized = false;
+    try {
+      this.reactionExecutor.destroy();
+    } catch (err) {
+      console.error("[RuntimeCoordinator] Error destroying ReactionExecutor:", err);
+    }
+    try {
+      this.animationManager.destroy();
+    } catch (err) {
+      console.error("[RuntimeCoordinator] Error destroying AnimationManager:", err);
+    }
   }
 }
 
@@ -400,13 +466,21 @@ export function getActiveRuntimeCoordinator(): RuntimeCoordinator | undefined {
 
 /**
  * Bootstraps and returns the authoritative RuntimeCoordinator singleton instance.
+ * On initialization failure, ensures partial resources are cleaned up and does not retain broken instance.
  */
 export async function bootstrapRuntime(
   options: RuntimeCoordinatorOptions = {}
 ): Promise<RuntimeCoordinator> {
-  if (!activeRuntimeCoordinator) {
-    activeRuntimeCoordinator = new RuntimeCoordinator(options);
-    await activeRuntimeCoordinator.init();
+  if (!activeRuntimeCoordinator || activeRuntimeCoordinator.getState() === "DESTROYED") {
+    const coordinator = new RuntimeCoordinator(options);
+    try {
+      await coordinator.init();
+      activeRuntimeCoordinator = coordinator;
+    } catch (err) {
+      coordinator.destroy();
+      activeRuntimeCoordinator = undefined;
+      throw err;
+    }
   }
   return activeRuntimeCoordinator;
 }

@@ -120,6 +120,12 @@ export class ReactionExecutor {
       this.unsubscribeEventBus = null;
     }
 
+    // Unsubscribe from AnimationManager
+    if (this.unsubscribeAnimationComplete) {
+      this.unsubscribeAnimationComplete();
+      this.unsubscribeAnimationComplete = null;
+    }
+
     this.clearDurationTimer();
     this.currentExecutionToken++;
     this.activeReaction = null;

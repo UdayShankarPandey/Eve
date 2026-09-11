@@ -53,6 +53,8 @@ export class ConversationManager {
   private provider?: ConversationLlmProvider;
   private readonly getPersonalityId: () => PersonalityId;
   private isInitialized = false;
+  private turnQueue: Promise<unknown> = Promise.resolve();
+  private currentGeneration = 0;
 
   constructor(options: ConversationManagerOptions = {}) {
     this.storage = options.storage || new InMemoryConversationStorageAdapter();
@@ -120,8 +122,10 @@ export class ConversationManager {
 
   /**
    * Clears conversational history both in memory and persistent storage.
+   * Increments the generation token so in-flight requests cannot resurrect deleted history.
    */
   public async clearHistory(): Promise<void> {
+    this.currentGeneration++;
     this.historyManager.clear();
     await this.storage.clearHistory();
   }
@@ -142,10 +146,28 @@ export class ConversationManager {
 
   /**
    * Processes a user message turn and returns a validated, presentation-ready response.
-   * On any provider, network, or validation error, seamlessly returns an in-character fallback.
+   * Serializes concurrent turns strictly in FIFO order to prevent history races.
    */
   public async sendMessage(rawInput: string): Promise<ValidatedCharacterResponse> {
+    const nextTurn = (async () => {
+      try {
+        await this.turnQueue;
+      } catch {
+        // Failure isolation: previous turn error does not jam the queue
+      }
+      return this.executeTurn(rawInput);
+    })();
+
+    this.turnQueue = nextTurn;
+    return nextTurn;
+  }
+
+  /**
+   * Executes a single serialized conversation turn.
+   */
+  private async executeTurn(rawInput: string): Promise<ValidatedCharacterResponse> {
     const personalityContext = this.getActivePersonalityContext();
+    const turnGeneration = this.currentGeneration;
 
     // 1. Validate user input
     const inputValidation = validateUserMessage(rawInput);
@@ -167,8 +189,10 @@ export class ConversationManager {
         personalityContext.id,
         "No AI conversation provider configured"
       );
-      this.historyManager.append("assistant", fallback.replyText, fallback.expressionId);
-      await this.persistHistorySafely();
+      if (turnGeneration === this.currentGeneration) {
+        this.historyManager.append("assistant", fallback.replyText, fallback.expressionId);
+        await this.persistHistorySafely();
+      }
       return fallback;
     }
 
@@ -203,8 +227,11 @@ export class ConversationManager {
         };
       }
 
-      this.historyManager.append("assistant", response.replyText, response.expressionId);
-      await this.persistHistorySafely();
+      // Invalidate if history was cleared/reset during in-flight LLM call
+      if (turnGeneration === this.currentGeneration) {
+        this.historyManager.append("assistant", response.replyText, response.expressionId);
+        await this.persistHistorySafely();
+      }
       return response;
     } catch (err) {
       // 8. Resilient in-character fallback on provider failure, timeout, or invalid output
@@ -217,8 +244,11 @@ export class ConversationManager {
         };
       }
 
-      this.historyManager.append("assistant", fallback.replyText, fallback.expressionId);
-      await this.persistHistorySafely();
+      // Invalidate if history was cleared/reset during in-flight LLM call
+      if (turnGeneration === this.currentGeneration) {
+        this.historyManager.append("assistant", fallback.replyText, fallback.expressionId);
+        await this.persistHistorySafely();
+      }
       return fallback;
     }
   }
