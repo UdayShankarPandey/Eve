@@ -114,3 +114,47 @@ export function isPathAllowed(
 
   return false;
 }
+
+/**
+ * Resolves the default OS user Downloads directory path across platforms.
+ */
+export function getDefaultDownloadsPath(): string {
+  if (process.platform === "win32") {
+    const profile = process.env.USERPROFILE || "C:\\Users\\Default";
+    return path.join(profile, "Downloads");
+  }
+  const home = process.env.HOME || "/tmp";
+  return path.join(home, "Downloads");
+}
+
+/**
+ * Resolves whether the canonical Downloads directory is authorized under the given allowedPaths.
+ * Returns the canonical Downloads path if it is provably contained within an explicitly
+ * user-approved allowedPath according to existing FileScopeValidator containment semantics,
+ * or null if unauthorized.
+ *
+ * Downloads may NEVER be authorized based solely on basename === "Downloads" or string matching.
+ */
+export function resolveAuthorizedDownloadsDir(
+  allowedPaths: readonly string[],
+  canonicalDownloadsPath?: string
+): string | null {
+  if (!allowedPaths || !Array.isArray(allowedPaths) || allowedPaths.length === 0) {
+    return null;
+  }
+
+  let canonicalDownloads: string;
+  try {
+    const rawTarget = canonicalDownloadsPath || getDefaultDownloadsPath();
+    canonicalDownloads = normalizeScopePath(rawTarget);
+  } catch {
+    return null;
+  }
+
+  if (isPathAllowed(canonicalDownloads, allowedPaths)) {
+    return canonicalDownloads;
+  }
+
+  return null;
+}
+

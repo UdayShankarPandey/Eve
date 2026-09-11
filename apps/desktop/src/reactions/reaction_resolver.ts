@@ -1,9 +1,10 @@
 import type { DesktopEvent } from "../../../../packages/shared-types/src/events.ts";
-import type {
-  ActiveReactionState,
-  ReactionDefinition,
-  ResolutionResult,
-  TimeProvider,
+import {
+  ReactionPriority,
+  type ActiveReactionState,
+  type ReactionDefinition,
+  type ResolutionResult,
+  type TimeProvider,
 } from "./types.ts";
 import { ReactionRegistry, globalReactionRegistry } from "./reaction_registry.ts";
 import { CooldownManager } from "./cooldown_manager.ts";
@@ -118,7 +119,9 @@ export class ReactionResolver {
     }
 
     // 2. Check if the candidate reaction is currently on cooldown
-    if (this.cooldownManager.isOnCooldown(reaction.id, now)) {
+    // Critical priority reactions (>= CRITICAL / 100) bypass cooldown suppression
+    const isCritical = reaction.priority >= ReactionPriority.CRITICAL;
+    if (!isCritical && this.cooldownManager.isOnCooldown(reaction.id, now)) {
       const remaining = this.cooldownManager.getRemainingCooldown(reaction.id, now);
       return {
         status: "SUPPRESSED_ON_COOLDOWN",

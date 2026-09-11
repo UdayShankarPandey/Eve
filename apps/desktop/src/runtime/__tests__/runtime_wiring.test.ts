@@ -21,6 +21,7 @@ import {
 import { PermissionIds, DEFAULT_PERMISSIONS_CONFIG } from "../../../../../packages/shared-types/src/permissions.ts";
 import type { DesktopEvent } from "../../../../../packages/shared-types/src/events.ts";
 import { EventBus } from "../../events/event_bus.ts";
+import { EventTypes } from "../../events/types.ts";
 import { MockConversationLlmProvider } from "../../conversation/llm_provider.ts";
 import { InMemoryConversationStorageAdapter } from "../../conversation/storage.ts";
 import { InMemoryProfileStorageAdapter } from "../../character/profile_storage.ts";
@@ -69,15 +70,25 @@ function createTestProfile(overrides: Partial<CharacterProfile> = {}): Character
 describe("Sprint 10 — Production Wiring & Runtime Integration", () => {
   let tempDir: string;
   let testFilePath: string;
+  let activeCoordinators: RuntimeCoordinator[] = [];
 
   beforeEach(() => {
     resetRuntimeCoordinator();
+    activeCoordinators = [];
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pixelpal-runtime-wiring-"));
     testFilePath = path.join(tempDir, "permissions.json");
   });
 
   afterEach(() => {
     resetRuntimeCoordinator();
+    for (const c of activeCoordinators) {
+      try {
+        c.destroy();
+      } catch {
+        // Cleanup best effort
+      }
+    }
+    activeCoordinators = [];
     try {
       if (fs.existsSync(tempDir)) {
         fs.rmSync(tempDir, { recursive: true, force: true });
@@ -443,5 +454,256 @@ describe("Sprint 10 — Production Wiring & Runtime Integration", () => {
     const r2 = await bootstrapRuntime();
 
     assert.equal(r1, r2, "bootstrapRuntime must return the same singleton instance");
+  });
+
+  // =========================================================================
+  // TEST G — Live ReactionExecutor & AnimationManager Wiring (RUNT-03 + ANIM-04)
+  // =========================================================================
+  it("TEST G: Live native event flows through EventGate -> EventBus -> ReactionExecutor -> AnimationManager", async () => {
+    let capturedTauriHandler: ((event: { payload: DesktopEvent }) => void) | undefined;
+    const mockListen = async <T>(
+      eventName: string,
+      handler: (event: { payload: T }) => void
+    ): Promise<() => void> => {
+      if (eventName === "desktop-event") {
+        capturedTauriHandler = handler as any;
+      }
+      return () => {};
+    };
+
+    const coordinator = new RuntimeCoordinator({
+      permissionStorage: new InMemoryPermissionStorageAdapter(),
+      invokeFn: async () => ({}),
+      listenFn: mockListen,
+      autoStartEventListener: true,
+    });
+    activeCoordinators.push(coordinator);
+    await coordinator.init();
+
+    const animManager = coordinator.getAnimationManager();
+    const reactionExec = coordinator.getReactionExecutor();
+    assert.ok(animManager, "AnimationManager must be owned and accessible");
+    assert.ok(reactionExec, "ReactionExecutor must be owned and accessible");
+
+    // Initially idle
+    assert.equal(animManager.getCurrentAnimation().id, animManager.getDefaultAnimationId());
+
+    // Deliver a permitted native event (BATTERY_LOW)
+    const batteryEvent: DesktopEvent = {
+      id: "ev_bat_live",
+      type: EventTypes.BATTERY_LOW,
+      timestamp: Date.now(),
+      source: "battery",
+      payload: { percentage: 12 },
+    };
+
+    capturedTauriHandler!({ payload: batteryEvent });
+
+    // ReactionExecutor should have received the event and commanded AnimationManager to play "worried"
+    assert.equal(
+      animManager.getCurrentAnimation().id,
+      "worried",
+      "Live BATTERY_LOW event must cause AnimationManager to transition to 'worried'"
+    );
+
+    // When reaction completes, it must restore dynamic default animation ID (ANIM-04), not hardcoded "idle"
+    reactionExec.completeReaction();
+    assert.equal(
+      animManager.getCurrentAnimation().id,
+      animManager.getDefaultAnimationId(),
+      "Reaction completion must restore the registry default animation ID"
+    );
+  });
+
+  // =========================================================================
+  // TEST H — Critical Reaction Cooldown Bypass in Live Runtime (REACT-01)
+  // =========================================================================
+  it("TEST H: BATTERY_CRITICAL bypasses active cooldown and resolves live reaction", async () => {
+    let capturedTauriHandler: ((event: { payload: DesktopEvent }) => void) | undefined;
+    const mockListen = async <T>(
+      eventName: string,
+      handler: (event: { payload: T }) => void
+    ): Promise<() => void> => {
+      if (eventName === "desktop-event") {
+        capturedTauriHandler = handler as any;
+      }
+      return () => {};
+    };
+
+    const coordinator = new RuntimeCoordinator({
+      permissionStorage: new InMemoryPermissionStorageAdapter(),
+      invokeFn: async () => ({}),
+      listenFn: mockListen,
+      autoStartEventListener: true,
+    });
+    activeCoordinators.push(coordinator);
+    await coordinator.init();
+
+    const animManager = coordinator.getAnimationManager();
+    const reactionExec = coordinator.getReactionExecutor();
+
+    // 1. Deliver initial BATTERY_CRITICAL
+    const critEvent1: DesktopEvent = {
+      id: "ev_crit_1",
+      type: EventTypes.BATTERY_CRITICAL,
+      timestamp: 1000,
+      source: "battery",
+      payload: { percentage: 3 },
+    };
+    capturedTauriHandler!({ payload: critEvent1 });
+
+    assert.equal(animManager.getCurrentAnimation().id, "sad");
+    reactionExec.completeReaction();
+
+    // Verify cooldown is active
+    const resolver = coordinator.getReactionResolver();
+    assert.equal(resolver.getCooldownManager().isOnCooldown("react_battery_critical", 2000), true);
+
+    // 2. Deliver second BATTERY_CRITICAL while cooldown is active
+    const critEvent2: DesktopEvent = {
+      id: "ev_crit_2",
+      type: EventTypes.BATTERY_CRITICAL,
+      timestamp: 2000,
+      source: "battery",
+      payload: { percentage: 2 },
+    };
+    capturedTauriHandler!({ payload: critEvent2 });
+
+    // Critical reaction MUST execute and transition animation, not be suppressed by cooldown
+    assert.equal(
+      animManager.getCurrentAnimation().id,
+      "sad",
+      "BATTERY_CRITICAL must bypass cooldown and execute in live runtime"
+    );
+  });
+
+  // =========================================================================
+  // TEST I — Deduplicated Native Sync (RUNT-01)
+  // =========================================================================
+  it("TEST I: updatePermission() and setAllowedFilePaths() produce exactly ONE native sync call each", async () => {
+    let syncCallCount = 0;
+    const mockInvoke = async (cmd: string) => {
+      if (cmd === "update_detector_config") {
+        syncCallCount++;
+      }
+      return {};
+    };
+
+    const coordinator = new RuntimeCoordinator({
+      permissionStorage: new InMemoryPermissionStorageAdapter(),
+      invokeFn: mockInvoke,
+      autoStartEventListener: false,
+    });
+    activeCoordinators.push(coordinator);
+
+    await coordinator.init();
+    assert.equal(syncCallCount, 1, "init() must perform exactly 1 initial sync");
+
+    // Test 1: updatePermission produces exactly 1 sync call
+    syncCallCount = 0;
+    await coordinator.updatePermission(PermissionIds.APPLICATIONS, false);
+    assert.equal(
+      syncCallCount,
+      1,
+      "Single updatePermission call must invoke update_detector_config exactly once"
+    );
+
+    // Test 2: setAllowedFilePaths produces exactly 1 sync call
+    syncCallCount = 0;
+    const testFolder = path.resolve(tempDir, "test_scope");
+    fs.mkdirSync(testFolder, { recursive: true });
+    await coordinator.setAllowedFilePaths([testFolder]);
+    assert.equal(
+      syncCallCount,
+      1,
+      "Single setAllowedFilePaths call must invoke update_detector_config exactly once"
+    );
+  });
+
+  // =========================================================================
+  // TEST J — Runtime Lifecycle & Safe Cleanup (destroy)
+  // =========================================================================
+  it("TEST J: destroy() cleans up listeners and prevents further reaction execution", async () => {
+    let unlistenCalled = false;
+    let capturedTauriHandler: ((event: { payload: DesktopEvent }) => void) | undefined;
+    const mockListen = async <T>(
+      eventName: string,
+      handler: (event: { payload: T }) => void
+    ): Promise<() => void> => {
+      if (eventName === "desktop-event") {
+        capturedTauriHandler = handler as any;
+      }
+      return () => {
+        unlistenCalled = true;
+      };
+    };
+
+    const coordinator = new RuntimeCoordinator({
+      permissionStorage: new InMemoryPermissionStorageAdapter(),
+      invokeFn: async () => ({}),
+      listenFn: mockListen,
+      autoStartEventListener: true,
+    });
+    await coordinator.init();
+
+    assert.equal(coordinator.isReady(), true);
+
+    await coordinator.destroy();
+
+    assert.equal(coordinator.isReady(), false, "Coordinator must report not ready after destroy");
+    assert.equal(unlistenCalled, true, "destroy() must call the unlisten callback from Tauri");
+  });
+
+  // =========================================================================
+  // TEST K — IPC Schema Completeness (IPC-01)
+  // =========================================================================
+  it("TEST K: update_detector_config receives complete 13-field native contract", async () => {
+    let capturedConfig: any = null;
+    const mockInvoke = async (cmd: string, args?: Record<string, unknown>) => {
+      if (cmd === "update_detector_config") {
+        capturedConfig = args?.config;
+      }
+      return {};
+    };
+
+    const coordinator = new RuntimeCoordinator({
+      permissionStorage: new InMemoryPermissionStorageAdapter(),
+      invokeFn: mockInvoke,
+      autoStartEventListener: false,
+    });
+    activeCoordinators.push(coordinator);
+    await coordinator.init();
+
+    assert.ok(capturedConfig, "Native config must have been passed to invoke");
+
+    const expectedKeys = [
+      "battery_enabled",
+      "app_activity_enabled",
+      "user_activity_enabled",
+      "session_enabled",
+      "network_enabled",
+      "filesystem_enabled",
+      "monitored_directories",
+      "downloads_enabled",
+      "downloads_dir",
+      "selected_applications",
+      "idle_threshold_ms",
+      "screen_time_threshold_ms",
+      "screen_time_enabled",
+    ];
+
+    for (const key of expectedKeys) {
+      assert.ok(
+        key in capturedConfig,
+        `Expected key '${key}' missing from synchronized detector config`
+      );
+    }
+    assert.equal(typeof capturedConfig.idle_threshold_ms, "number");
+    assert.equal(typeof capturedConfig.screen_time_threshold_ms, "number");
+    assert.ok(
+      capturedConfig.downloads_dir === null || typeof capturedConfig.downloads_dir === "string",
+      "downloads_dir must be string or null"
+    );
+    assert.ok(Array.isArray(capturedConfig.selected_applications));
   });
 });

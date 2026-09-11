@@ -1,14 +1,15 @@
 /**
  * PixelPal — Production Desktop Runtime Coordinator
- * Sprint 10 Production Wiring Completion
+ * Sprint 10 Production Wiring Completion & Sprint 11 Hardening
  *
  * Establishes the authoritative runtime service lifecycle:
  * 1. Startup: Instantiates PermissionManager, loads permissions.json, and synchronizes initial native detector config to Rust.
- * 2. Dynamic Sync: Listens to permission changes and updates native detectors in real-time via invoke("update_detector_config").
+ * 2. Dynamic Sync: Listens to permission changes and updates native detectors in real-time via invoke("update_detector_config") (single sync trigger).
  * 3. Event Ingestion & Gating: Listens to Tauri "desktop-event" IPC, passes events through EventGate, and dispatches permitted events to globalEventBus.
- * 4. Data Controls: Instantiates DataControlsManager and exposes host-side data deletion / settings reset APIs.
- * 5. AI Conversation Privacy: Configures ConversationManager with PermissionManager to ensure zero-context AI privacy.
- * 6. Singleton Discipline: Provides single authoritative instances across the desktop runtime.
+ * 4. Reaction & Animation Orchestration: Connects live ReactionExecutor and AnimationManager to globalEventBus for real-time companion behavior.
+ * 5. Data Controls: Instantiates DataControlsManager and exposes host-side data deletion / settings reset APIs.
+ * 6. AI Conversation Privacy: Configures ConversationManager with PermissionManager to ensure zero-context AI privacy.
+ * 7. Singleton & Lifecycle Discipline: Provides clean single authoritative instances and hermetic shutdown.
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -37,6 +38,11 @@ import {
 import type { ProfileStorageAdapter } from "../character/profile_storage.ts";
 import type { GeneratedStorageAdapter } from "../character/generated_storage.ts";
 import type { SpriteStorageAdapter } from "../character/sprite_storage.ts";
+import { AnimationManager } from "../animation/index.ts";
+import {
+  ReactionExecutor,
+  ReactionResolver,
+} from "../reactions/index.ts";
 
 /**
  * Type signature for Tauri invoke command function.
@@ -73,6 +79,12 @@ export interface RuntimeCoordinatorOptions {
   generatedStorage?: GeneratedStorageAdapter;
   /** Optional sprite asset storage adapter for data controls */
   spriteStorage?: SpriteStorageAdapter;
+  /** Optional custom animation manager */
+  animationManager?: AnimationManager;
+  /** Optional custom reaction resolver */
+  reactionResolver?: ReactionResolver;
+  /** Optional custom reaction executor */
+  reactionExecutor?: ReactionExecutor;
   /** Whether to automatically start listening to Tauri "desktop-event" upon init (default: true) */
   autoStartEventListener?: boolean;
 }
@@ -86,6 +98,9 @@ export class RuntimeCoordinator {
   private readonly eventBus: EventBus;
   private readonly dataControls: DataControlsManager;
   private readonly conversationManager: ConversationManager;
+  private readonly animationManager: AnimationManager;
+  private readonly reactionResolver: ReactionResolver;
+  private readonly reactionExecutor: ReactionExecutor;
 
   private readonly invokeFn: InvokeCommandFn;
   private readonly listenFn: ListenEventFn;
@@ -93,6 +108,8 @@ export class RuntimeCoordinator {
 
   private isInitialized = false;
   private unlistenDesktopEvents?: () => void;
+  private unsubscribePermissionListener?: () => void;
+  private activeSyncPromise: Promise<void> | null = null;
 
   constructor(options: RuntimeCoordinatorOptions = {}) {
     this.eventBus = options.eventBus ?? globalEventBus;
@@ -131,10 +148,30 @@ export class RuntimeCoordinator {
       permissionManager: this.permissionManager,
     });
 
-    // 5. Register permission change listener to keep EventGate and native Rust detectors synchronized
-    this.permissionManager.addListener((_updatedDef, fullConfig) => {
+    // 5. Instantiate AnimationManager and ReactionExecutor
+    this.animationManager =
+      options.animationManager ??
+      new AnimationManager({
+        timingMode: typeof window !== "undefined" ? "raf" : "timer",
+      });
+
+    this.reactionResolver =
+      options.reactionResolver ??
+      new ReactionResolver();
+
+    this.reactionExecutor =
+      options.reactionExecutor ??
+      new ReactionExecutor({
+        resolver: this.reactionResolver,
+        animationManager: this.animationManager,
+        eventBus: this.eventBus,
+        autoStart: false,
+      });
+
+    // 6. Register permission change listener to keep EventGate and native Rust detectors synchronized (single native-sync trigger)
+    this.unsubscribePermissionListener = this.permissionManager.addListener((_updatedDef, fullConfig) => {
       this.eventGate.updateConfig(fullConfig);
-      this.syncNativeDetectors(fullConfig).catch((err) => {
+      this.activeSyncPromise = this.syncNativeDetectors(fullConfig).catch((err) => {
         console.error("[RuntimeCoordinator] Failed to sync native detector config on change:", err);
       });
     });
@@ -144,6 +181,7 @@ export class RuntimeCoordinator {
    * Initializes all runtime services:
    * - Loads persisted permissions.json (or recovers to safe defaults)
    * - Syncs initial detector config to Rust
+   * - Starts ReactionExecutor on eventBus
    * - Starts listening to Tauri "desktop-event" IPC channel
    */
   public async init(): Promise<void> {
@@ -161,6 +199,9 @@ export class RuntimeCoordinator {
 
       // Perform initial native detector synchronization to Rust
       await this.syncNativeDetectors(activeConfig);
+
+      // Start ReactionExecutor so events reaching EventBus execute reactions
+      this.reactionExecutor.start();
 
       // Start listening to Tauri desktop events
       if (this.autoStartEventListener) {
@@ -239,14 +280,18 @@ export class RuntimeCoordinator {
 
   /**
    * Updates a permission setting, persists to disk, and synchronizes to native detectors.
+   * Exactly ONE native detector synchronization is triggered via the change listener.
    */
   public async updatePermission(
     id: PermissionId,
     enabled: boolean
   ): Promise<PermissionDefinition> {
     const updated = await this.permissionManager.updatePermission(id, enabled);
-    // syncNativeDetectors is also triggered by the change listener; ensure sync completes
-    await this.syncNativeDetectors();
+    // syncNativeDetectors is triggered by the PermissionManager change listener (single trigger).
+    // Await active sync promise so caller knows native sync completed without duplicating IPC.
+    if (this.activeSyncPromise) {
+      await this.activeSyncPromise;
+    }
     return updated;
   }
 
@@ -257,7 +302,9 @@ export class RuntimeCoordinator {
     paths: readonly string[]
   ): Promise<PermissionDefinition> {
     const updated = await this.permissionManager.setAllowedFilePaths(paths);
-    await this.syncNativeDetectors();
+    if (this.activeSyncPromise) {
+      await this.activeSyncPromise;
+    }
     return updated;
   }
 
@@ -285,6 +332,18 @@ export class RuntimeCoordinator {
     return this.conversationManager;
   }
 
+  public getAnimationManager(): AnimationManager {
+    return this.animationManager;
+  }
+
+  public getReactionExecutor(): ReactionExecutor {
+    return this.reactionExecutor;
+  }
+
+  public getReactionResolver(): ReactionResolver {
+    return this.reactionResolver;
+  }
+
   // ==========================================
   // Data Controls APIs (Bridge for Future UI)
   // ==========================================
@@ -303,8 +362,26 @@ export class RuntimeCoordinator {
 
   public async resetSettings(): Promise<DataDeletionResult> {
     const result = await this.dataControls.resetSettings();
-    await this.syncNativeDetectors();
+    await this.permissionManager.reset();
+    if (this.activeSyncPromise) {
+      await this.activeSyncPromise;
+    }
     return result;
+  }
+
+  /**
+   * Completely tears down the runtime coordinator, stops event listeners,
+   * unsubscribes permission listeners, and destroys active reaction & animation loops.
+   */
+  public destroy(): void {
+    this.stopEventListener();
+    if (this.unsubscribePermissionListener) {
+      this.unsubscribePermissionListener();
+      this.unsubscribePermissionListener = undefined;
+    }
+    this.reactionExecutor.destroy();
+    this.animationManager.destroy();
+    this.isInitialized = false;
   }
 }
 
@@ -335,11 +412,11 @@ export async function bootstrapRuntime(
 }
 
 /**
- * Resets the runtime singleton (primarily for hermetic testing).
+ * Resets the runtime singleton and disposes active services (primarily for hermetic testing).
  */
 export function resetRuntimeCoordinator(): void {
   if (activeRuntimeCoordinator) {
-    activeRuntimeCoordinator.stopEventListener();
+    activeRuntimeCoordinator.destroy();
     activeRuntimeCoordinator = undefined;
   }
 }

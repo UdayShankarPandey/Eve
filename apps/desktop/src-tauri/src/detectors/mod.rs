@@ -22,6 +22,7 @@ use crate::events::types::DesktopEvent;
 
 /// Configuration for enabling/disabling specific detector categories
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct DetectorConfig {
     pub battery_enabled: bool,
     pub user_activity_enabled: bool,
@@ -36,6 +37,27 @@ pub struct DetectorConfig {
     pub downloads_dir: Option<String>,
     pub monitored_directories: Vec<String>,
     pub selected_applications: Vec<String>,
+}
+
+impl DetectorConfig {
+    /// Safe inactive configuration with all awareness detectors disabled
+    pub fn all_disabled() -> Self {
+        Self {
+            battery_enabled: false,
+            user_activity_enabled: false,
+            session_enabled: false,
+            network_enabled: false,
+            app_activity_enabled: false,
+            downloads_enabled: false,
+            filesystem_enabled: false,
+            screen_time_enabled: false,
+            idle_threshold_ms: 120_000,
+            screen_time_threshold_ms: 3_600_000,
+            downloads_dir: None,
+            monitored_directories: Vec::new(),
+            selected_applications: Vec::new(),
+        }
+    }
 }
 
 impl Default for DetectorConfig {
@@ -307,6 +329,8 @@ impl DetectorManager {
             .set_allow_list(config.selected_applications.clone());
         if let Some(ref dir) = config.downloads_dir {
             self.downloads.set_monitored_dir(dir.clone());
+        } else {
+            self.downloads.set_monitored_dir(String::new());
         }
         self.config = config;
     }
@@ -1118,5 +1142,83 @@ mod tests {
 
         assert_eq!(manager.get_diagnostics().check_count, 10);
         assert_eq!(manager.get_diagnostics().total_errors, 0);
+    }
+
+    #[test]
+    fn test_detector_config_all_disabled_and_safe_startup() {
+        let disabled = DetectorConfig::all_disabled();
+        assert!(!disabled.battery_enabled);
+        assert!(!disabled.user_activity_enabled);
+        assert!(!disabled.session_enabled);
+        assert!(!disabled.network_enabled);
+        assert!(!disabled.app_activity_enabled);
+        assert!(!disabled.downloads_enabled);
+        assert!(!disabled.filesystem_enabled);
+        assert!(!disabled.screen_time_enabled);
+        assert!(disabled.monitored_directories.is_empty());
+        assert!(disabled.selected_applications.is_empty());
+        assert!(disabled.downloads_dir.is_none());
+
+        // Construct manager with all_disabled config and verify zero events are emitted
+        let pct = Arc::new(AtomicU8::new(5)); // critical battery state
+        let bat = BatteryDetector::new(Box::new(TestPowerProvider(Arc::clone(&pct))));
+        let act = UserActivityDetector::new(Box::new(DummyInputProvider), 10_000);
+        let sess = SessionDetector::new(Box::new(DummySessionProvider));
+        let net = NetworkDetector::new(Box::new(TestNetProvider(Arc::new(AtomicBool::new(false)))));
+        let app = AppActivityDetector::new(Box::new(DummyAppProvider), 0);
+        let dl = DownloadDetector::new(Box::new(DummyDownloadScanner), "C:\\Downloads".to_string());
+        let fs = FilesystemDetector::new(Box::new(DummyFilesystemScanner), Vec::new());
+        let st = ScreenTimeDetector::new(
+            Box::new(TestScreenProvider {
+                current_time: Arc::new(AtomicU64::new(1000)),
+            }),
+            60_000,
+        );
+
+        let mut manager = DetectorManager::new(bat, act, sess, net, app, dl, fs, st, disabled);
+        let events = manager.check_all();
+        assert!(events.is_empty(), "All-disabled manager must emit zero events");
+        assert_eq!(manager.get_diagnostics().total_events_emitted, 0);
+    }
+
+    #[test]
+    fn test_detector_config_serde_deserialization_from_typescript_payload() {
+        // Test 1: Full payload including new mirrored fields
+        let full_json = r#"{
+            "battery_enabled": true,
+            "user_activity_enabled": false,
+            "session_enabled": true,
+            "network_enabled": false,
+            "app_activity_enabled": true,
+            "downloads_enabled": true,
+            "filesystem_enabled": true,
+            "screen_time_enabled": false,
+            "idle_threshold_ms": 150000,
+            "screen_time_threshold_ms": 7200000,
+            "downloads_dir": "C:\\Users\\alice\\Downloads",
+            "monitored_directories": ["C:\\Users\\alice\\Projects"],
+            "selected_applications": ["Code", "Slack"]
+        }"#;
+
+        let cfg: DetectorConfig = serde_json::from_str(full_json).expect("Full payload must deserialize");
+        assert!(cfg.battery_enabled);
+        assert!(!cfg.user_activity_enabled);
+        assert_eq!(cfg.idle_threshold_ms, 150000);
+        assert_eq!(cfg.downloads_dir.as_deref(), Some("C:\\Users\\alice\\Downloads"));
+        assert_eq!(cfg.monitored_directories, vec!["C:\\Users\\alice\\Projects".to_string()]);
+        assert_eq!(cfg.selected_applications, vec!["Code".to_string(), "Slack".to_string()]);
+
+        // Test 2: Partial payload (omitting optional/secondary fields) relying on #[serde(default)]
+        let partial_json = r#"{
+            "battery_enabled": false,
+            "filesystem_enabled": false
+        }"#;
+
+        let cfg_partial: DetectorConfig = serde_json::from_str(partial_json).expect("Partial payload must deserialize safely");
+        assert!(!cfg_partial.battery_enabled);
+        assert!(!cfg_partial.filesystem_enabled);
+        // Defaults filled from Default::default()
+        assert!(cfg_partial.user_activity_enabled);
+        assert_eq!(cfg_partial.idle_threshold_ms, 120_000);
     }
 }

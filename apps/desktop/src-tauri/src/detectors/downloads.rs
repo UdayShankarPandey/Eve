@@ -121,6 +121,10 @@ impl DownloadDetector {
 
     /// Scans Downloads and emits DOWNLOAD_COMPLETED events when new files stabilize
     pub fn check_events(&mut self) -> Result<Vec<DesktopEvent>, String> {
+        if self.monitored_dir.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
         let entries = self.provider.scan_downloads_dir(&self.monitored_dir)?;
         let mut events = Vec::new();
 

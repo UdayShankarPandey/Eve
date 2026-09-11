@@ -196,4 +196,98 @@ describe("Phase 1: Reaction Resolver Tests", () => {
     assert.deepStrictEqual(r1, r2);
     assert.deepStrictEqual(r2, r3);
   });
+
+  test("8. REACT-01: Critical reaction (BATTERY_CRITICAL) bypasses active cooldown and resolves", () => {
+    let mockTime = 1000;
+    const cooldownMgr = new CooldownManager(() => mockTime);
+    const resolver = new ReactionResolver({
+      cooldownManager: cooldownMgr,
+      timeProvider: () => mockTime,
+    });
+
+    const criticalEvent: DesktopEvent = {
+      id: "bat_crit_1",
+      type: EventTypes.BATTERY_CRITICAL,
+      timestamp: mockTime,
+      source: "battery",
+      payload: { percentage: 4 },
+    };
+
+    // 1. First resolution executes
+    const res1 = resolver.resolve(criticalEvent);
+    assert.strictEqual(res1.status, "RESOLVED");
+    assert.strictEqual(res1.reaction?.id, "react_battery_critical");
+    assert.strictEqual(res1.reaction?.priority, ReactionPriority.CRITICAL);
+
+    // Arm cooldown for 180,000ms
+    cooldownMgr.recordTrigger(res1.reaction!.id, res1.reaction!.cooldownMs, mockTime);
+    assert.strictEqual(cooldownMgr.isOnCooldown(res1.reaction!.id, 2000), true);
+
+    // 2. Second resolution while cooldown is active -> MUST BYPASS cooldown and RESOLVE
+    mockTime = 2000;
+    const res2 = resolver.resolve(criticalEvent);
+    assert.strictEqual(
+      res2.status,
+      "RESOLVED",
+      "Critical reaction must not be suppressed by active cooldown"
+    );
+    assert.strictEqual(res2.reaction?.id, "react_battery_critical");
+  });
+
+  test("9. REACT-01: Non-critical reactions (HIGH, NORMAL, LOW) remain suppressed when cooldown is active", () => {
+    let mockTime = 1000;
+    const cooldownMgr = new CooldownManager(() => mockTime);
+    const resolver = new ReactionResolver({
+      cooldownManager: cooldownMgr,
+      timeProvider: () => mockTime,
+    });
+
+    // Test HIGH priority (BATTERY_LOW)
+    const highEvent: DesktopEvent = {
+      id: "bat_low_1",
+      type: EventTypes.BATTERY_LOW,
+      timestamp: mockTime,
+      source: "battery",
+      payload: {},
+    };
+    const resHigh1 = resolver.resolve(highEvent);
+    assert.strictEqual(resHigh1.status, "RESOLVED");
+    cooldownMgr.recordTrigger(resHigh1.reaction!.id, resHigh1.reaction!.cooldownMs, mockTime);
+
+    // During cooldown, HIGH is suppressed
+    const resHigh2 = resolver.resolve(highEvent);
+    assert.strictEqual(resHigh2.status, "SUPPRESSED_ON_COOLDOWN");
+
+    // Test NORMAL priority (CHARGING_STARTED)
+    const normalEvent: DesktopEvent = {
+      id: "charge_1",
+      type: EventTypes.CHARGING_STARTED,
+      timestamp: mockTime,
+      source: "battery",
+      payload: {},
+    };
+    const resNorm1 = resolver.resolve(normalEvent);
+    assert.strictEqual(resNorm1.status, "RESOLVED");
+    cooldownMgr.recordTrigger(resNorm1.reaction!.id, resNorm1.reaction!.cooldownMs, mockTime);
+
+    // During cooldown, NORMAL is suppressed
+    const resNorm2 = resolver.resolve(normalEvent);
+    assert.strictEqual(resNorm2.status, "SUPPRESSED_ON_COOLDOWN");
+
+    // Test LOW priority (APP_OPENED)
+    const lowEvent: DesktopEvent = {
+      id: "app_1",
+      type: EventTypes.APP_OPENED,
+      timestamp: mockTime,
+      source: "application",
+      payload: {},
+    };
+    const resLow1 = resolver.resolve(lowEvent);
+    assert.strictEqual(resLow1.status, "RESOLVED");
+    cooldownMgr.recordTrigger(resLow1.reaction!.id, resLow1.reaction!.cooldownMs, mockTime);
+
+    // During cooldown, LOW is suppressed
+    const resLow2 = resolver.resolve(lowEvent);
+    assert.strictEqual(resLow2.status, "SUPPRESSED_ON_COOLDOWN");
+  });
 });

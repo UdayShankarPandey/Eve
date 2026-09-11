@@ -254,7 +254,7 @@ fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let engine = NativeEventEngine::new(DetectorConfig::default());
+    let engine = NativeEventEngine::new(DetectorConfig::all_disabled());
     let engine_state = EventEngineState(Arc::new(Mutex::new(engine)));
 
     tauri::Builder::default()

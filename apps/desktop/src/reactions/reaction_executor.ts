@@ -18,6 +18,7 @@ export interface IAnimationManager {
   play(animationId?: string): void;
   stop(): void;
   onAnimationComplete(listener: (animation: any) => void): () => void;
+  getDefaultAnimationId?(): string;
 }
 
 /**
@@ -37,6 +38,7 @@ export interface ReactionExecutorOptions {
   idleScheduler?: IIdleScheduler;
   eventBus?: EventBus;
   timeProvider?: TimeProvider;
+  defaultAnimationId?: string;
   autoStart?: boolean;
 }
 
@@ -51,6 +53,7 @@ export class ReactionExecutor {
   private readonly idleScheduler?: IIdleScheduler;
   private readonly eventBus?: EventBus;
   private readonly timeProvider: TimeProvider;
+  private readonly defaultAnimationId?: string;
 
   private activeReaction: ActiveReactionState | null = null;
   private currentExecutionToken = 0;
@@ -68,6 +71,7 @@ export class ReactionExecutor {
     this.idleScheduler = options.idleScheduler;
     this.eventBus = options.eventBus;
     this.timeProvider = options.timeProvider ?? (() => Date.now());
+    this.defaultAnimationId = options.defaultAnimationId;
 
     if (options.autoStart) {
       this.start();
@@ -222,6 +226,9 @@ export class ReactionExecutor {
       this.durationTimerId = setTimeout(() => {
         this.handleDurationExpired(token);
       }, reaction.durationMs);
+      if (typeof (this.durationTimerId as any)?.unref === "function") {
+        (this.durationTimerId as any).unref();
+      }
     }
   }
 
@@ -238,11 +245,16 @@ export class ReactionExecutor {
     this.currentExecutionToken++;
     this.activeReaction = null;
 
-    // Return AnimationManager to default background idle state
+    // Return AnimationManager to default background idle/neutral state
+    const defaultId =
+      this.defaultAnimationId ??
+      (typeof this.animationManager.getDefaultAnimationId === "function"
+        ? this.animationManager.getDefaultAnimationId()
+        : "idle");
     try {
-      this.animationManager.setAnimation("idle");
+      this.animationManager.setAnimation(defaultId);
     } catch (err) {
-      console.error("[ReactionExecutor] Error resetting to idle:", err);
+      console.error(`[ReactionExecutor] Error resetting to ${defaultId}:`, err);
     }
 
     // Resume autonomous ambient idle scheduler

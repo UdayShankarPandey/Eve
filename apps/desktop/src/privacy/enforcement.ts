@@ -16,7 +16,7 @@ import {
   type FilesPermissionScope,
   PermissionIds,
 } from "./types.ts";
-import { isPathAllowed } from "./file_scope.ts";
+import { isPathAllowed, resolveAuthorizedDownloadsDir } from "./file_scope.ts";
 import type { EventBus } from "../events/event_bus.ts";
 
 /**
@@ -176,7 +176,11 @@ export interface NativeDetectorConfigMapping {
   downloads_enabled: boolean;
   filesystem_enabled: boolean;
   screen_time_enabled: boolean;
+  idle_threshold_ms: number;
+  screen_time_threshold_ms: number;
+  downloads_dir: string | null;
   monitored_directories: string[];
+  selected_applications: string[];
 }
 
 /**
@@ -196,15 +200,24 @@ export function mapPermissionConfigToDetectorConfig(
     | undefined;
   const allowedPaths = filesScope?.allowedPaths ? [...filesScope.allowedPaths] : [];
 
+  // Downloads detection is ONLY authorized if FILES permission is granted AND
+  // an explicit Downloads path is present in user's allowedPaths allowlist.
+  const authorizedDownloadsDir = filesEnabled ? resolveAuthorizedDownloadsDir(allowedPaths) : null;
+  const downloadsEnabled = filesEnabled && Boolean(authorizedDownloadsDir);
+
   return {
     battery_enabled: systemEnabled,
     user_activity_enabled: systemEnabled,
     session_enabled: systemEnabled,
     network_enabled: systemEnabled,
     app_activity_enabled: appEnabled,
-    downloads_enabled: filesEnabled,
+    downloads_enabled: downloadsEnabled,
     filesystem_enabled: filesEnabled && allowedPaths.length > 0,
     screen_time_enabled: screenTimeEnabled,
+    idle_threshold_ms: 120_000,
+    screen_time_threshold_ms: 3_600_000,
+    downloads_dir: authorizedDownloadsDir,
     monitored_directories: filesEnabled ? allowedPaths : [],
+    selected_applications: ["VS Code", "Code"],
   };
 }

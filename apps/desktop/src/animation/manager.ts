@@ -274,6 +274,20 @@ export class AnimationManager {
     return this.currentAnimation.id === this.registry.getDefaultId();
   }
 
+  /**
+   * Returns the default animation identifier configured in the registry.
+   */
+  public getDefaultAnimationId(): string {
+    return this.registry.getDefaultId();
+  }
+
+  /**
+   * Returns the underlying animation registry.
+   */
+  public getRegistry(): AnimationRegistry {
+    return this.registry;
+  }
+
   // --- Subscriptions ---
 
   public onFrameChange(listener: FrameChangeListener): () => void {
@@ -328,8 +342,14 @@ export class AnimationManager {
         this.step(delta);
         const nextInterval = Math.max(16, Math.floor(1000 / (this.currentAnimation.fps || 4)));
         this.timerId = setTimeout(tickTimer, nextInterval);
+        if (typeof (this.timerId as any)?.unref === "function") {
+          (this.timerId as any).unref();
+        }
       };
       this.timerId = setTimeout(tickTimer, frameIntervalMs);
+      if (typeof (this.timerId as any)?.unref === "function") {
+        (this.timerId as any).unref();
+      }
     }
   }
 

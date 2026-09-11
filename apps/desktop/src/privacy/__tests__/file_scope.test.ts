@@ -13,6 +13,8 @@ import {
   normalizeScopePath,
   isPathContained,
   isPathAllowed,
+  getDefaultDownloadsPath,
+  resolveAuthorizedDownloadsDir,
 } from "../file_scope.ts";
 
 describe("Category C: File Scope & Path Containment", () => {
@@ -123,5 +125,53 @@ describe("Category C: File Scope & Path Containment", () => {
       }
       throw err;
     }
+  });
+
+  it("7. resolveAuthorizedDownloadsDir strictly requires containment of canonical Downloads path", () => {
+    const isWin = process.platform === "win32";
+    const canonical = isWin
+      ? "C:\\Users\\TestUser\\Downloads"
+      : "/home/testuser/Downloads";
+    const parentDir = isWin
+      ? "C:\\Users\\TestUser"
+      : "/home/testuser";
+    const unrelatedDir = isWin
+      ? "C:\\Users\\TestUser\\Projects"
+      : "/home/testuser/Projects";
+    const fakeBasenameMatch = isWin
+      ? "D:\\Other\\Downloads"
+      : "/opt/other/Downloads";
+    const suffixCollision = isWin
+      ? "C:\\Users\\TestUser\\MyDownloads"
+      : "/home/testuser/MyDownloads";
+
+    // 1. Empty allowedPaths -> null (DISABLED)
+    assert.equal(resolveAuthorizedDownloadsDir([], canonical), null);
+    assert.equal(resolveAuthorizedDownloadsDir(undefined as any, canonical), null);
+
+    // 2. Unrelated directory -> null (DISABLED)
+    assert.equal(resolveAuthorizedDownloadsDir([unrelatedDir], canonical), null);
+
+    // 3. Basename collision on different drive/root -> null (DISABLED, no loose basename matching)
+    assert.equal(resolveAuthorizedDownloadsDir([fakeBasenameMatch], canonical), null);
+
+    // 4. Suffix collision -> null (DISABLED)
+    assert.equal(resolveAuthorizedDownloadsDir([suffixCollision], canonical), null);
+
+    // 5. Explicit Downloads directory -> canonical path (ENABLED)
+    const exactResult = resolveAuthorizedDownloadsDir([canonical], canonical);
+    assert.ok(exactResult !== null);
+    assert.equal(
+      path.normalize(exactResult!),
+      path.normalize(normalizeScopePath(canonical))
+    );
+
+    // 6. Parent directory containing Downloads -> canonical path (ENABLED via valid containment)
+    const parentResult = resolveAuthorizedDownloadsDir([parentDir], canonical);
+    assert.ok(parentResult !== null);
+    assert.equal(
+      path.normalize(parentResult!),
+      path.normalize(normalizeScopePath(canonical))
+    );
   });
 });

@@ -182,4 +182,65 @@ describe("Category D: Permission Enforcement & Event Gate", () => {
     config.permissions.NOTIFICATIONS.enabled = false;
     assert.equal(isNotificationPresentationPermitted(config), false);
   });
+
+  it("8. IPC-01: mapPermissionConfigToDetectorConfig outputs all 13 canonical native configuration fields", () => {
+    const config = JSON.parse(JSON.stringify(DEFAULT_PERMISSIONS_CONFIG));
+    const nativeMapping = mapPermissionConfigToDetectorConfig(config);
+
+    const requiredFields = [
+      "battery_enabled",
+      "app_activity_enabled",
+      "user_activity_enabled",
+      "session_enabled",
+      "network_enabled",
+      "filesystem_enabled",
+      "monitored_directories",
+      "downloads_enabled",
+      "downloads_dir",
+      "selected_applications",
+      "idle_threshold_ms",
+      "screen_time_threshold_ms",
+      "screen_time_enabled",
+    ];
+
+    for (const field of requiredFields) {
+      assert.ok(
+        field in nativeMapping,
+        `Field '${field}' must be present in NativeDetectorConfigMapping to match Rust DetectorConfig`
+      );
+    }
+
+    assert.equal(typeof nativeMapping.idle_threshold_ms, "number");
+    assert.equal(typeof nativeMapping.screen_time_threshold_ms, "number");
+    assert.ok(
+      nativeMapping.downloads_dir === null || typeof nativeMapping.downloads_dir === "string",
+      "downloads_dir must be string or null"
+    );
+    assert.ok(Array.isArray(nativeMapping.selected_applications));
+  });
+
+  it("9. RUST-01: Downloads detector is strictly gated on explicit canonical Downloads authorization", () => {
+    const config = JSON.parse(JSON.stringify(DEFAULT_PERMISSIONS_CONFIG));
+
+    // Case 1: FILES disabled
+    config.permissions.FILES.enabled = false;
+    config.permissions.FILES.scope = { allowedPaths: ["C:\\Users\\Test\\Downloads"] };
+    const res1 = mapPermissionConfigToDetectorConfig(config);
+    assert.equal(res1.downloads_enabled, false);
+    assert.equal(res1.downloads_dir, null);
+
+    // Case 2: FILES enabled, allowedPaths empty []
+    config.permissions.FILES.enabled = true;
+    config.permissions.FILES.scope = { allowedPaths: [] };
+    const res2 = mapPermissionConfigToDetectorConfig(config);
+    assert.equal(res2.downloads_enabled, false);
+    assert.equal(res2.downloads_dir, null);
+
+    // Case 3: FILES enabled, unrelated folder (must NOT enable downloads)
+    config.permissions.FILES.enabled = true;
+    config.permissions.FILES.scope = { allowedPaths: ["C:\\Some\\Arbitrary\\Folder"] };
+    const res3 = mapPermissionConfigToDetectorConfig(config);
+    assert.equal(res3.downloads_enabled, false);
+    assert.equal(res3.downloads_dir, null);
+  });
 });
