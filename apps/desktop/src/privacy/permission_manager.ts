@@ -71,6 +71,13 @@ export class PermissionManager {
   }
 
   /**
+   * Returns the underlying permission storage adapter.
+   */
+  public getStorage(): PermissionStorageAdapter {
+    return this.storage;
+  }
+
+  /**
    * Returns a snapshot copy of the full active PermissionConfig.
    */
   public getConfig(): PermissionConfig {

@@ -264,6 +264,15 @@ pub fn run() {
             if let Err(e) = setup_tray(app.handle()) {
                 eprintln!("Failed to setup system tray: {}", e);
             }
+
+            // Start native event engine detector loop in production startup
+            let state = app.state::<EventEngineState>();
+            if let Ok(mut engine) = state.0.lock() {
+                if let Err(e) = engine.start(app.handle().clone()) {
+                    eprintln!("Failed to start native event engine: {}", e);
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
